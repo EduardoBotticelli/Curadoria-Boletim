@@ -38,8 +38,10 @@ function criarItensDoMock(): ItemRevisao[] {
 }
 
 export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
-  // ESTADO INICIAL: apenas itens do mock.
-  // Os itens manuais do localStorage serao carregados apos hidratacao (useEffect abaixo).
+  // Flag "mounted" - garante que so renderizamos o conteudo depois da hidratacao completa.
+  // Esta eh a solucao mais robusta contra hydration mismatch.
+  const [mounted, setMounted] = useState(false)
+
   const [itens, setItens] = useState<ItemRevisao[]>(criarItensDoMock)
 
   const [statusFiltro, setStatusFiltro] = useState<StatusFiltro>("todos")
@@ -51,9 +53,11 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
   const [enviando, setEnviando] = useState(false)
   const [finalizado, setFinalizado] = useState(false)
 
-  // Carrega os itens manuais do localStorage apos a hidratacao inicial.
-  // Isso evita o erro "Hydration mismatch" porque o servidor nao tem acesso ao localStorage.
+  // Marca como "mounted" e carrega itens manuais do localStorage.
+  // Roda apenas uma vez, no cliente, depois da hidratacao.
   useEffect(() => {
+    setMounted(true)
+
     try {
       const salvos = localStorage.getItem(STORAGE_KEY_MANUAIS)
       if (!salvos) return
@@ -67,14 +71,13 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
       }))
 
       setItens((atual) => {
-        // Evita duplicar se o efeito rodar mais de uma vez.
         const idsExistentes = new Set(atual.map((item) => item.noticia.id))
         const novos = itensManuais.filter((item) => !idsExistentes.has(item.noticia.id))
         if (novos.length === 0) return atual
         return [...novos, ...atual]
       })
     } catch {
-      // Se der erro na leitura, ignora e segue sem itens manuais.
+      // Ignora erros de leitura do localStorage
     }
   }, [])
 
@@ -103,7 +106,6 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
   const itensFiltrados = useMemo(() => {
     return itens.filter((item) => {
       if (statusFiltro !== "todos") {
-        // "Aprovados" inclui itens ajustados (tambem entram nos boletins finais).
         const combinaStatus =
           statusFiltro === "aprovado"
             ? item.status === "aprovado" || item.status === "ajustado"
@@ -117,7 +119,6 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
     })
   }, [itens, statusFiltro, boletimFiltro])
 
-  // Acoes
   const aprovar = useCallback((id: string) => {
     setItens((atual) =>
       atual.map((item) =>
@@ -166,7 +167,6 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
     toast.success(quantidade === 1 ? "1 item pendente aprovado" : `${quantidade} itens pendentes aprovados`)
   }, [])
 
-  // Adicionar item manualmente (salva no localStorage tambem)
   const adicionarItemManual = useCallback((noticia: Noticia) => {
     const novoItem: ItemRevisao = {
       noticia,
@@ -176,22 +176,18 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
 
     setItens((atual) => {
       const novaLista = [novoItem, ...atual]
-
-      // Persistir apenas os itens manuais no localStorage
       try {
         const manuais = novaLista
           .filter((item) => item.noticia.origem === "manual")
           .map((item) => item.noticia)
         localStorage.setItem(STORAGE_KEY_MANUAIS, JSON.stringify(manuais))
       } catch {
-        // Se der erro no salvamento, ignora
+        // Ignora erros de escrita no localStorage
       }
-
       return novaLista
     })
   }, [])
 
-  // Dados do modal de confirmacao
   const resumoConfirmacao = useMemo(() => {
     const incluidos = itens.filter(
       (item) => item.status !== "rejeitado" && item.boletinsFinais.length > 0
@@ -234,8 +230,9 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
     }
   }, [itens])
 
-  // Atalhos de teclado
   useEffect(() => {
+    if (!mounted) return
+
     function aoTeclar(e: KeyboardEvent) {
       const alvo = e.target as HTMLElement
       if (alvo.tagName === "INPUT" || alvo.tagName === "TEXTAREA" || alvo.isContentEditable) return
@@ -282,7 +279,24 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
 
     window.addEventListener("keydown", aoTeclar)
     return () => window.removeEventListener("keydown", aoTeclar)
-  }, [focadoId, itensFiltrados, confirmAberto, ajudaAberta, finalizado, aprovar, rejeitar])
+  }, [mounted, focadoId, itensFiltrados, confirmAberto, ajudaAberta, finalizado, aprovar, rejeitar])
+
+  // Enquanto nao esta "mounted", renderiza apenas o header e um placeholder.
+  // Isso previne QUALQUER hydration mismatch, pois o servidor tambem renderiza so isso.
+  if (!mounted) {
+    return (
+      <div className="flex min-h-svh flex-col">
+        <PageHeader
+          dataExtenso={dataExtenso}
+          janelaTemporal={janelaTemporal}
+          onAbrirAjuda={() => {}}
+        />
+        <main className="mx-auto flex w-full max-w-4xl flex-1 items-center justify-center px-4 py-12">
+          <p className="text-sm text-muted-foreground">Carregando curadoria...</p>
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="flex min-h-svh flex-col">
@@ -347,12 +361,10 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
         )}
       </main>
 
-      {/* Botao de adicionar item manual (canto inferior esquerdo) */}
       <div className="fixed left-4 bottom-4 z-40 md:left-8 md:bottom-8">
         <AddItemDialog onAdicionar={adicionarItemManual} desabilitado={finalizado} />
       </div>
 
-      {/* Botao flutuante de finalizacao (canto inferior direito) */}
       <div className="fixed right-4 bottom-4 z-40 md:right-8 md:bottom-8">
         <Button
           size="lg"
