@@ -1,6 +1,6 @@
 import type { Noticia } from "./types"
 
-export const NOTICIAS_MOCK: Noticia[] = [
+const NOTICIAS_SCRAPER_RAW: Omit<Noticia, "origem">[] = [
   {
     id: "n-01",
     fonte: "BCB",
@@ -298,3 +298,9 @@ export const NOTICIAS_MOCK: Noticia[] = [
     url: "https://www.gov.br/aneel/pt-br/assuntos/noticias",
   },
 ]
+
+// Marca todos os itens do scraper com origem correta
+export const NOTICIAS_MOCK: Noticia[] = NOTICIAS_SCRAPER_RAW.map((n) => ({
+  ...n,
+  origem: "scraper" as const,
+}))
