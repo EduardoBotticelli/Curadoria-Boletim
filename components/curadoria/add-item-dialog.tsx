@@ -6,9 +6,8 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Field, FieldLabel } from "@/components/ui/field"
 import { Label } from "@/components/ui/label"
-import { BOLETIM_IDS, BOLETIM_LABELS } from "@/lib/boletins"
+import { BOLETIM_IDS, BOLETINS } from "@/lib/boletins"
 import type { BoletimId, Noticia } from "@/lib/types"
 
 interface AddItemDialogProps {
@@ -91,14 +90,14 @@ export function AddItemDialog({ onAdicionar, desabilitado }: AddItemDialogProps)
           Adicionar item
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Adicionar item manualmente</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <Field>
-            <FieldLabel htmlFor="titulo">Título *</FieldLabel>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="titulo">Título *</Label>
             <input
               id="titulo"
               type="text"
@@ -108,10 +107,10 @@ export function AddItemDialog({ onAdicionar, desabilitado }: AddItemDialogProps)
               placeholder="Ex: STJ decide sobre..."
               required
             />
-          </Field>
+          </div>
 
-          <Field>
-            <FieldLabel htmlFor="resumo">Resumo *</FieldLabel>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="resumo">Resumo *</Label>
             <textarea
               id="resumo"
               value={resumo}
@@ -120,24 +119,24 @@ export function AddItemDialog({ onAdicionar, desabilitado }: AddItemDialogProps)
               placeholder="Descrição breve do conteúdo..."
               required
             />
-          </Field>
+          </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <Field>
-              <FieldLabel htmlFor="fonte">Fonte *</FieldLabel>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="fonte">Fonte *</Label>
               <input
                 id="fonte"
                 type="text"
                 value={fonte}
                 onChange={(e) => setFonte(e.target.value)}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                placeholder="Ex: Valor Econômico, IRIB, Editorial próprio"
+                placeholder="Ex: Valor, IRIB, Editorial próprio"
                 required
               />
-            </Field>
+            </div>
 
-            <Field>
-              <FieldLabel htmlFor="data">Data de publicação</FieldLabel>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="data">Data de publicação</Label>
               <input
                 id="data"
                 type="date"
@@ -145,11 +144,11 @@ export function AddItemDialog({ onAdicionar, desabilitado }: AddItemDialogProps)
                 onChange={(e) => setDataPublicacao(e.target.value)}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
-            </Field>
+            </div>
           </div>
 
-          <Field>
-            <FieldLabel htmlFor="url">Link (opcional)</FieldLabel>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="url">Link (opcional)</Label>
             <input
               id="url"
               type="url"
@@ -158,23 +157,28 @@ export function AddItemDialog({ onAdicionar, desabilitado }: AddItemDialogProps)
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               placeholder="https://..."
             />
-          </Field>
+          </div>
 
           <div className="flex flex-col gap-2">
             <Label>Boletins de destino *</Label>
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-              {BOLETIM_IDS.map((id) => (
-                <label
-                  key={id}
-                  className="flex cursor-pointer items-center gap-2 rounded-md border border-input px-3 py-2 hover:bg-accent"
-                >
-                  <Checkbox
-                    checked={boletinsSelecionados.includes(id)}
-                    onCheckedChange={() => toggleBoletim(id)}
-                  />
-                  <span className="text-sm">{BOLETIM_LABELS[id]}</span>
-                </label>
-              ))}
+              {BOLETIM_IDS.map((id) => {
+                const checkboxId = `add-${id}`
+                return (
+                  <label
+                    key={id}
+                    htmlFor={checkboxId}
+                    className="flex cursor-pointer items-center gap-2 rounded-md border border-input px-3 py-2 hover:bg-accent"
+                  >
+                    <Checkbox
+                      id={checkboxId}
+                      checked={boletinsSelecionados.includes(id)}
+                      onCheckedChange={() => toggleBoletim(id)}
+                    />
+                    <span className="text-sm">{BOLETINS[id]}</span>
+                  </label>
+                )
+              })}
             </div>
           </div>
 
