@@ -29,35 +29,18 @@ interface DashboardProps {
 
 const STORAGE_KEY_MANUAIS = "noticias-manuais"
 
+function criarItensDoMock(): ItemRevisao[] {
+  return NOTICIAS_MOCK.map((noticia) => ({
+    noticia,
+    status: "aprovado" as StatusRevisao,
+    boletinsFinais: [...noticia.boletins_confirmados_ia],
+  }))
+}
+
 export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
-  // COMPORTAMENTO INICIAL: todos os cards começam aprovados (pendentes = 0).
-  // Também carrega itens manuais do localStorage se houver.
-  const [itens, setItens] = useState<ItemRevisao[]>(() => {
-    const itensScraper: ItemRevisao[] = NOTICIAS_MOCK.map((noticia) => ({
-      noticia,
-      status: "aprovado" as StatusRevisao,
-      boletinsFinais: [...noticia.boletins_confirmados_ia],
-    }))
-
-    if (typeof window !== "undefined") {
-      try {
-        const salvos = localStorage.getItem(STORAGE_KEY_MANUAIS)
-        if (salvos) {
-          const manuais: Noticia[] = JSON.parse(salvos)
-          const itensManuais: ItemRevisao[] = manuais.map((noticia) => ({
-            noticia,
-            status: "aprovado" as StatusRevisao,
-            boletinsFinais: [...noticia.boletins_confirmados_ia],
-          }))
-          return [...itensManuais, ...itensScraper]
-        }
-      } catch {
-        // Se der erro na leitura, ignora e segue sem itens manuais
-      }
-    }
-
-    return itensScraper
-  })
+  // ESTADO INICIAL: apenas itens do mock.
+  // Os itens manuais do localStorage serao carregados apos hidratacao (useEffect abaixo).
+  const [itens, setItens] = useState<ItemRevisao[]>(criarItensDoMock)
 
   const [statusFiltro, setStatusFiltro] = useState<StatusFiltro>("todos")
   const [boletimFiltro, setBoletimFiltro] = useState<BoletimId | "todos">("todos")
@@ -68,7 +51,34 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
   const [enviando, setEnviando] = useState(false)
   const [finalizado, setFinalizado] = useState(false)
 
-  // Estatísticas
+  // Carrega os itens manuais do localStorage apos a hidratacao inicial.
+  // Isso evita o erro "Hydration mismatch" porque o servidor nao tem acesso ao localStorage.
+  useEffect(() => {
+    try {
+      const salvos = localStorage.getItem(STORAGE_KEY_MANUAIS)
+      if (!salvos) return
+      const manuais: Noticia[] = JSON.parse(salvos)
+      if (!Array.isArray(manuais) || manuais.length === 0) return
+
+      const itensManuais: ItemRevisao[] = manuais.map((noticia) => ({
+        noticia,
+        status: "aprovado" as StatusRevisao,
+        boletinsFinais: [...noticia.boletins_confirmados_ia],
+      }))
+
+      setItens((atual) => {
+        // Evita duplicar se o efeito rodar mais de uma vez.
+        const idsExistentes = new Set(atual.map((item) => item.noticia.id))
+        const novos = itensManuais.filter((item) => !idsExistentes.has(item.noticia.id))
+        if (novos.length === 0) return atual
+        return [...novos, ...atual]
+      })
+    } catch {
+      // Se der erro na leitura, ignora e segue sem itens manuais.
+    }
+  }, [])
+
+  // Estatisticas
   const stats = useMemo(() => {
     const contagem = { aprovado: 0, rejeitado: 0, ajustado: 0, pendente: 0 }
     for (const item of itens) contagem[item.status]++
@@ -93,7 +103,7 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
   const itensFiltrados = useMemo(() => {
     return itens.filter((item) => {
       if (statusFiltro !== "todos") {
-        // "Aprovados" inclui itens ajustados (também entram nos boletins finais).
+        // "Aprovados" inclui itens ajustados (tambem entram nos boletins finais).
         const combinaStatus =
           statusFiltro === "aprovado"
             ? item.status === "aprovado" || item.status === "ajustado"
@@ -107,7 +117,7 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
     })
   }, [itens, statusFiltro, boletimFiltro])
 
-  // Ações
+  // Acoes
   const aprovar = useCallback((id: string) => {
     setItens((atual) =>
       atual.map((item) =>
@@ -156,7 +166,7 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
     toast.success(quantidade === 1 ? "1 item pendente aprovado" : `${quantidade} itens pendentes aprovados`)
   }, [])
 
-  // Adicionar item manualmente (salva no localStorage também)
+  // Adicionar item manualmente (salva no localStorage tambem)
   const adicionarItemManual = useCallback((noticia: Noticia) => {
     const novoItem: ItemRevisao = {
       noticia,
@@ -168,22 +178,20 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
       const novaLista = [novoItem, ...atual]
 
       // Persistir apenas os itens manuais no localStorage
-      if (typeof window !== "undefined") {
-        try {
-          const manuais = novaLista
-            .filter((item) => item.noticia.origem === "manual")
-            .map((item) => item.noticia)
-          localStorage.setItem(STORAGE_KEY_MANUAIS, JSON.stringify(manuais))
-        } catch {
-          // Se der erro no salvamento, ignora
-        }
+      try {
+        const manuais = novaLista
+          .filter((item) => item.noticia.origem === "manual")
+          .map((item) => item.noticia)
+        localStorage.setItem(STORAGE_KEY_MANUAIS, JSON.stringify(manuais))
+      } catch {
+        // Se der erro no salvamento, ignora
       }
 
       return novaLista
     })
   }, [])
 
-  // Dados do modal de confirmação
+  // Dados do modal de confirmacao
   const resumoConfirmacao = useMemo(() => {
     const incluidos = itens.filter(
       (item) => item.status !== "rejeitado" && item.boletinsFinais.length > 0
@@ -215,12 +223,12 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
           })),
         }),
       })
-      if (!resposta.ok) throw new Error("Falha ao enviar a revisão")
+      if (!resposta.ok) throw new Error("Falha ao enviar a revisao")
       setConfirmAberto(false)
       setFinalizado(true)
-      toast.success("Revisão confirmada! Os boletins serão gerados e enviados.")
+      toast.success("Revisao confirmada! Os boletins serao gerados e enviados.")
     } catch {
-      toast.error("Não foi possível confirmar a revisão. Tente novamente.")
+      toast.error("Nao foi possivel confirmar a revisao. Tente novamente.")
     } finally {
       setEnviando(false)
     }
@@ -291,7 +299,7 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
           <div className="flex items-center gap-3 rounded-xl border border-success/40 bg-success/10 p-4">
             <CheckCircle2Icon className="size-5 shrink-0 text-success" aria-hidden="true" />
             <p className="text-sm text-foreground/90">
-              Revisão confirmada. Os boletins estão sendo gerados e serão enviados aos advogados.
+              Revisao confirmada. Os boletins estao sendo gerados e serao enviados aos advogados.
             </p>
           </div>
         )}
@@ -315,7 +323,7 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
               </EmptyMedia>
               <EmptyTitle>Nenhum item encontrado</EmptyTitle>
               <EmptyDescription>
-                Nenhuma notícia corresponde aos filtros selecionados.
+                Nenhuma noticia corresponde aos filtros selecionados.
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
@@ -339,12 +347,12 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
         )}
       </main>
 
-      {/* Botão de adicionar item manual (canto inferior esquerdo) */}
+      {/* Botao de adicionar item manual (canto inferior esquerdo) */}
       <div className="fixed left-4 bottom-4 z-40 md:left-8 md:bottom-8">
         <AddItemDialog onAdicionar={adicionarItemManual} desabilitado={finalizado} />
       </div>
 
-      {/* Botão flutuante de finalização (canto inferior direito) */}
+      {/* Botao flutuante de finalizacao (canto inferior direito) */}
       <div className="fixed right-4 bottom-4 z-40 md:right-8 md:bottom-8">
         <Button
           size="lg"
@@ -352,7 +360,7 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
           disabled={finalizado || stats.pendentes > 0}
           onClick={() => setConfirmAberto(true)}
         >
-          {finalizado ? "Revisão confirmada" : "Confirmar revisão"}
+          {finalizado ? "Revisao confirmada" : "Confirmar revisao"}
           {!finalizado && <ArrowRightIcon data-icon="inline-end" />}
         </Button>
       </div>
