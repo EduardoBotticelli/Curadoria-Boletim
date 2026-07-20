@@ -78,7 +78,9 @@ export function NewsCard({
       aria-label={noticia.titulo}
       className={cn(
         "rounded-xl border bg-card text-card-foreground transition-shadow duration-150 outline-none",
-        focado ? "border-ring ring-2 ring-ring/40" : "focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40",
+        focado
+          ? "border-ring ring-2 ring-ring/40"
+          : "focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40",
         status === "rejeitado" && "opacity-60"
       )}
     >
@@ -104,7 +106,7 @@ export function NewsCard({
               {noticia.categoria}
             </Badge>
             {noticia.url && (
-              {noticia.url}className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              {noticia.url}text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
               >
                 <ExternalLinkIcon className="size-3" aria-hidden="true" />
                 Fonte
@@ -168,3 +170,127 @@ export function NewsCard({
                     >
                       {BOLETINS[id]}
                     </Badge>
+                  ))}
+                </div>
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  Nenhum boletim — item órfão
+                </span>
+              )}
+            </div>
+
+            {noticia.boletins_rejeitados.length > 0 && (
+              <Collapsible open={rejeicoesAbertas} onOpenChange={setRejeicoesAbertas}>
+                <CollapsibleTrigger
+                  render={
+                    <Button variant="ghost" size="xs" className="w-fit text-muted-foreground" />
+                  }
+                >
+                  <ChevronDownIcon
+                    data-icon="inline-start"
+                    className={cn(
+                      "transition-transform duration-150",
+                      rejeicoesAbertas && "rotate-180"
+                    )}
+                  />
+                  {noticia.boletins_rejeitados.length === 1
+                    ? "1 boletim descartado pela IA"
+                    : `${noticia.boletins_rejeitados.length} boletins descartados pela IA`}
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <ul className="mt-1 flex flex-col gap-1 rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground">
+                    {noticia.boletins_rejeitados.map((rej) => (
+                      <li key={rej.boletim}>
+                        <span className="font-medium text-foreground/80">
+                          {BOLETINS[rej.boletim]}:
+                        </span>{" "}
+                        {rej.motivo}
+                      </li>
+                    ))}
+                  </ul>
+                </CollapsibleContent>
+              </Collapsible>
+            )}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+
+      <Separator />
+
+      {/* Ações */}
+      <div className="flex flex-col gap-2 p-4 pt-3">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <Button
+            size="lg"
+            disabled={desabilitado}
+            onClick={(e) => {
+              e.stopPropagation()
+              onAprovar()
+            }}
+          >
+            <CheckIcon data-icon="inline-start" />
+            Aprovar como sugerido
+          </Button>
+          <Button
+            variant="outline"
+            size="lg"
+            disabled={desabilitado}
+            className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={(e) => {
+              e.stopPropagation()
+              onRejeitar()
+            }}
+          >
+            <XIcon data-icon="inline-start" />
+            Remover de tudo
+          </Button>
+          <Button
+            variant="outline"
+            size="lg"
+            disabled={desabilitado}
+            className="border-info/40 text-info hover:bg-info/10 hover:text-info"
+            aria-expanded={ajusteAberto}
+            onClick={(e) => {
+              e.stopPropagation()
+              onAbrirAjuste(!ajusteAberto)
+            }}
+          >
+            <SlidersHorizontalIcon data-icon="inline-start" />
+            Ajustar boletins
+          </Button>
+        </div>
+
+        {ajusteAberto && (
+          <fieldset className="mt-1 flex flex-col gap-3 rounded-lg border bg-muted/40 p-4">
+            <legend className="sr-only">Selecionar boletins para este item</legend>
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+              {BOLETIM_IDS.map((id) => {
+                const checkboxId = `${noticia.id}-${id}`
+                return (
+                  <div key={id} className="flex items-center gap-2">
+                    <Checkbox
+                      id={checkboxId}
+                      checked={rascunho.includes(id)}
+                      onCheckedChange={(marcado) => alternarBoletim(id, marcado === true)}
+                    />
+                    <label htmlFor={checkboxId} className="cursor-pointer text-sm leading-none">
+                      {BOLETINS[id]}
+                    </label>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => onAbrirAjuste(false)}>
+                Cancelar
+              </Button>
+              <Button size="sm" onClick={() => onSalvarAjustes(rascunho)}>
+                Salvar ajustes
+              </Button>
+            </div>
+          </fieldset>
+        )}
+      </div>
+    </article>
+  )
+}
