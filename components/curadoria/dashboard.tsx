@@ -17,24 +17,48 @@ import { FilterBar, type StatusFiltro } from "./filter-bar"
 import { NewsCard } from "./news-card"
 import { ConfirmDialog } from "./confirm-dialog"
 import { ShortcutsDialog } from "./shortcuts-dialog"
+import { AddItemDialog } from "./add-item-dialog"
 import { BOLETIM_IDS } from "@/lib/boletins"
 import { NOTICIAS_MOCK } from "@/lib/mock-data"
-import type { BoletimId, ItemRevisao, StatusRevisao } from "@/lib/types"
+import type { BoletimId, ItemRevisao, Noticia, StatusRevisao } from "@/lib/types"
 
 interface DashboardProps {
   dataExtenso: string
   janelaTemporal: string
 }
 
+const STORAGE_KEY_MANUAIS = "noticias-manuais"
+
 export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
   // COMPORTAMENTO INICIAL: todos os cards começam aprovados (pendentes = 0).
-  const [itens, setItens] = useState<ItemRevisao[]>(() =>
-    NOTICIAS_MOCK.map((noticia) => ({
+  // Também carrega itens manuais do localStorage se houver.
+  const [itens, setItens] = useState<ItemRevisao[]>(() => {
+    const itensScraper: ItemRevisao[] = NOTICIAS_MOCK.map((noticia) => ({
       noticia,
       status: "aprovado" as StatusRevisao,
       boletinsFinais: [...noticia.boletins_confirmados_ia],
     }))
-  )
+
+    if (typeof window !== "undefined") {
+      try {
+        const salvos = localStorage.getItem(STORAGE_KEY_MANUAIS)
+        if (salvos) {
+          const manuais: Noticia[] = JSON.parse(salvos)
+          const itensManuais: ItemRevisao[] = manuais.map((noticia) => ({
+            noticia,
+            status: "aprovado" as StatusRevisao,
+            boletinsFinais: [...noticia.boletins_confirmados_ia],
+          }))
+          return [...itensManuais, ...itensScraper]
+        }
+      } catch {
+        // Se der erro na leitura, ignora e segue sem itens manuais
+      }
+    }
+
+    return itensScraper
+  })
+
   const [statusFiltro, setStatusFiltro] = useState<StatusFiltro>("todos")
   const [boletimFiltro, setBoletimFiltro] = useState<BoletimId | "todos">("todos")
   const [focadoId, setFocadoId] = useState<string | null>(null)
@@ -130,6 +154,33 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
       })
     )
     toast.success(quantidade === 1 ? "1 item pendente aprovado" : `${quantidade} itens pendentes aprovados`)
+  }, [])
+
+  // Adicionar item manualmente (salva no localStorage também)
+  const adicionarItemManual = useCallback((noticia: Noticia) => {
+    const novoItem: ItemRevisao = {
+      noticia,
+      status: "aprovado",
+      boletinsFinais: [...noticia.boletins_confirmados_ia],
+    }
+
+    setItens((atual) => {
+      const novaLista = [novoItem, ...atual]
+
+      // Persistir apenas os itens manuais no localStorage
+      if (typeof window !== "undefined") {
+        try {
+          const manuais = novaLista
+            .filter((item) => item.noticia.origem === "manual")
+            .map((item) => item.noticia)
+          localStorage.setItem(STORAGE_KEY_MANUAIS, JSON.stringify(manuais))
+        } catch {
+          // Se der erro no salvamento, ignora
+        }
+      }
+
+      return novaLista
+    })
   }, [])
 
   // Dados do modal de confirmação
@@ -240,8 +291,7 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
           <div className="flex items-center gap-3 rounded-xl border border-success/40 bg-success/10 p-4">
             <CheckCircle2Icon className="size-5 shrink-0 text-success" aria-hidden="true" />
             <p className="text-sm text-foreground/90">
-              Revis&atilde;o confirmada. Os boletins est&atilde;o sendo gerados e ser&atilde;o
-              enviados aos advogados.
+              Revisão confirmada. Os boletins estão sendo gerados e serão enviados aos advogados.
             </p>
           </div>
         )}
@@ -265,7 +315,7 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
               </EmptyMedia>
               <EmptyTitle>Nenhum item encontrado</EmptyTitle>
               <EmptyDescription>
-                Nenhuma not&iacute;cia corresponde aos filtros selecionados.
+                Nenhuma notícia corresponde aos filtros selecionados.
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
@@ -289,7 +339,12 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
         )}
       </main>
 
-      {/* Botão flutuante de finalização */}
+      {/* Botão de adicionar item manual (canto inferior esquerdo) */}
+      <div className="fixed left-4 bottom-4 z-40 md:left-8 md:bottom-8">
+        <AddItemDialog onAdicionar={adicionarItemManual} desabilitado={finalizado} />
+      </div>
+
+      {/* Botão flutuante de finalização (canto inferior direito) */}
       <div className="fixed right-4 bottom-4 z-40 md:right-8 md:bottom-8">
         <Button
           size="lg"
@@ -297,7 +352,7 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
           disabled={finalizado || stats.pendentes > 0}
           onClick={() => setConfirmAberto(true)}
         >
-          {finalizado ? "Revis\u00e3o confirmada" : "Confirmar revis\u00e3o"}
+          {finalizado ? "Revisão confirmada" : "Confirmar revisão"}
           {!finalizado && <ArrowRightIcon data-icon="inline-end" />}
         </Button>
       </div>
