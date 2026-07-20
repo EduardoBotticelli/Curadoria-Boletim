@@ -69,6 +69,13 @@ export function NewsCard({
     setRascunho((atual) => (marcado ? [...atual, id] : atual.filter((b) => b !== id)))
   }
 
+  function abrirLinkFonte(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (noticia.url) {
+      window.open(noticia.url, "_blank", "noopener,noreferrer")
+    }
+  }
+
   return (
     <article
       ref={cardRef}
@@ -106,11 +113,14 @@ export function NewsCard({
               {noticia.categoria}
             </Badge>
             {noticia.url && (
-              {noticia.url}text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              <button
+                type="button"
+                onClick={abrirLinkFonte}
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
               >
                 <ExternalLinkIcon className="size-3" aria-hidden="true" />
                 Fonte
-              </a>
+              </button>
             )}
           </div>
         </div>
@@ -133,7 +143,7 @@ export function NewsCard({
         </div>
       </div>
 
-      {/* Corpo colapsável */}
+      {/* Corpo colapsavel */}
       <Collapsible open={corpoAberto} onOpenChange={setCorpoAberto}>
         <CollapsibleContent>
           <div className="flex flex-col gap-3 p-4 pt-3">
@@ -158,7 +168,7 @@ export function NewsCard({
 
             <div className="flex flex-col gap-1.5">
               <span className="text-xs font-medium text-muted-foreground">
-                {status === "ajustado" ? "Incluído em:" : "IA sugeriu incluir em:"}
+                {status === "ajustado" ? "Incluido em:" : "IA sugeriu incluir em:"}
               </span>
               {boletinsFinais.length > 0 ? (
                 <div className="flex flex-wrap gap-1">
@@ -174,7 +184,7 @@ export function NewsCard({
                 </div>
               ) : (
                 <span className="text-xs text-muted-foreground">
-                  Nenhum boletim — item órfão
+                  Nenhum boletim - item orfao
                 </span>
               )}
             </div>
@@ -217,7 +227,7 @@ export function NewsCard({
 
       <Separator />
 
-      {/* Ações */}
+      {/* Acoes */}
       <div className="flex flex-col gap-2 p-4 pt-3">
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <Button
