@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { PlusIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -15,23 +15,37 @@ interface AddItemDialogProps {
   desabilitado?: boolean
 }
 
+function dataHojeISO(): string {
+  return new Date().toISOString().split("T")[0]
+}
+
 export function AddItemDialog({ onAdicionar, desabilitado }: AddItemDialogProps) {
   const [aberto, setAberto] = useState(false)
   const [titulo, setTitulo] = useState("")
   const [resumo, setResumo] = useState("")
   const [fonte, setFonte] = useState("")
   const [url, setUrl] = useState("")
-  const [dataPublicacao, setDataPublicacao] = useState(
-    new Date().toISOString().split("T")[0]
-  )
+  const [dataPublicacao, setDataPublicacao] = useState<string>("")
   const [boletinsSelecionados, setBoletinsSelecionados] = useState<BoletimId[]>([])
+
+  // Ao montar no cliente, seta a data padrao como hoje.
+  useEffect(() => {
+    setDataPublicacao(dataHojeISO())
+  }, [])
+
+  // Sempre que o dialog abrir, garante que a data padrao esta preenchida.
+  useEffect(() => {
+    if (aberto && !dataPublicacao) {
+      setDataPublicacao(dataHojeISO())
+    }
+  }, [aberto, dataPublicacao])
 
   function resetar() {
     setTitulo("")
     setResumo("")
     setFonte("")
     setUrl("")
-    setDataPublicacao(new Date().toISOString().split("T")[0])
+    setDataPublicacao(dataHojeISO())
     setBoletinsSelecionados([])
   }
 
@@ -45,15 +59,15 @@ export function AddItemDialog({ onAdicionar, desabilitado }: AddItemDialogProps)
     e.preventDefault()
 
     if (!titulo.trim()) {
-      toast.error("O título é obrigatório")
+      toast.error("O titulo eh obrigatorio")
       return
     }
     if (!resumo.trim()) {
-      toast.error("O resumo é obrigatório")
+      toast.error("O resumo eh obrigatorio")
       return
     }
     if (!fonte.trim()) {
-      toast.error("A fonte é obrigatória")
+      toast.error("A fonte eh obrigatoria")
       return
     }
     if (boletinsSelecionados.length === 0) {
@@ -66,7 +80,7 @@ export function AddItemDialog({ onAdicionar, desabilitado }: AddItemDialogProps)
       fonte: fonte.trim(),
       categoria: "Adicionado manualmente",
       titulo: titulo.trim(),
-      data_publicacao: dataPublicacao,
+      data_publicacao: dataPublicacao || dataHojeISO(),
       resumo: resumo.trim(),
       motivo_filtragem: "Item adicionado manualmente pela curadoria.",
       palavras_chave_detectadas: [],
@@ -97,7 +111,7 @@ export function AddItemDialog({ onAdicionar, desabilitado }: AddItemDialogProps)
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="titulo">Título *</Label>
+            <Label htmlFor="titulo">Titulo *</Label>
             <input
               id="titulo"
               type="text"
@@ -116,7 +130,7 @@ export function AddItemDialog({ onAdicionar, desabilitado }: AddItemDialogProps)
               value={resumo}
               onChange={(e) => setResumo(e.target.value)}
               className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              placeholder="Descrição breve do conteúdo..."
+              placeholder="Descricao breve do conteudo..."
               required
             />
           </div>
@@ -130,13 +144,13 @@ export function AddItemDialog({ onAdicionar, desabilitado }: AddItemDialogProps)
                 value={fonte}
                 onChange={(e) => setFonte(e.target.value)}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                placeholder="Ex: Valor, IRIB, Editorial próprio"
+                placeholder="Ex: Valor, IRIB, Editorial"
                 required
               />
             </div>
 
             <div className="flex flex-col gap-2">
-              <Label htmlFor="data">Data de publicação</Label>
+              <Label htmlFor="data">Data de publicacao</Label>
               <input
                 id="data"
                 type="date"
