@@ -11,6 +11,8 @@ export type BoletimId =
 
 export type StatusRevisao = "pendente" | "aprovado" | "rejeitado" | "ajustado"
 
+export type OrigemNoticia = "scraper" | "manual"
+
 export interface BoletimRejeitado {
   boletim: BoletimId
   motivo: string
@@ -28,6 +30,7 @@ export interface Noticia {
   boletins_confirmados_ia: BoletimId[]
   boletins_rejeitados: BoletimRejeitado[]
   url: string
+  origem: OrigemNoticia
 }
 
 export interface ItemRevisao {
