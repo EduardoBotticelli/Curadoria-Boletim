@@ -29,20 +29,25 @@ interface DashboardProps {
 
 const STORAGE_KEY_MANUAIS = "noticias-manuais"
 
+/**
+ * Cria itens de revisao a partir das noticias.
+ * - Se a noticia foi classificada em algum boletim: status = "aprovado" (ja vai pro boletim final)
+ * - Se a noticia eh orfã (nenhum boletim): status = "pendente" (Alice pode resgatar se quiser)
+ */
 function criarItensDeNoticias(noticias: Noticia[]): ItemRevisao[] {
-  return noticias.map((noticia) => ({
-    noticia,
-    status: "aprovado" as StatusRevisao,
-    boletinsFinais: [...noticia.boletins_confirmados_ia],
-  }))
+  return noticias.map((noticia) => {
+    const temBoletim = noticia.boletins_confirmados_ia.length > 0
+    return {
+      noticia,
+      status: (temBoletim ? "aprovado" : "pendente") as StatusRevisao,
+      boletinsFinais: [...noticia.boletins_confirmados_ia],
+    }
+  })
 }
 
 export function Dashboard({ dataExtenso, janelaTemporal, noticias }: DashboardProps) {
-  // Flag "mounted" - garante que so renderizamos o conteudo depois da hidratacao completa.
   const [mounted, setMounted] = useState(false)
-
   const [itens, setItens] = useState<ItemRevisao[]>(() => criarItensDeNoticias(noticias))
-
   const [statusFiltro, setStatusFiltro] = useState<StatusFiltro>("todos")
   const [boletimFiltro, setBoletimFiltro] = useState<BoletimId | "todos">("todos")
   const [focadoId, setFocadoId] = useState<string | null>(null)
@@ -52,7 +57,6 @@ export function Dashboard({ dataExtenso, janelaTemporal, noticias }: DashboardPr
   const [enviando, setEnviando] = useState(false)
   const [finalizado, setFinalizado] = useState(false)
 
-  // Marca como "mounted" e carrega itens manuais do localStorage.
   useEffect(() => {
     setMounted(true)
 
@@ -79,7 +83,6 @@ export function Dashboard({ dataExtenso, janelaTemporal, noticias }: DashboardPr
     }
   }, [])
 
-  // Estatisticas
   const stats = useMemo(() => {
     const contagem = { aprovado: 0, rejeitado: 0, ajustado: 0, pendente: 0 }
     for (const item of itens) contagem[item.status]++
@@ -95,7 +98,8 @@ export function Dashboard({ dataExtenso, janelaTemporal, noticias }: DashboardPr
   const contagemBoletins = useMemo(() => {
     const contagem = Object.fromEntries(BOLETIM_IDS.map((id) => [id, 0])) as Record<BoletimId, number>
     for (const item of itens) {
-      if (item.status === "rejeitado") continue
+      // Nao conta itens rejeitados nem pendentes (pendente = orfa que nao foi resgatada)
+      if (item.status === "rejeitado" || item.status === "pendente") continue
       for (const boletim of item.boletinsFinais) contagem[boletim]++
     }
     return contagem
@@ -119,15 +123,30 @@ export function Dashboard({ dataExtenso, janelaTemporal, noticias }: DashboardPr
 
   const aprovar = useCallback((id: string) => {
     setItens((atual) =>
-      atual.map((item) =>
-        item.noticia.id === id
-          ? { ...item, status: "aprovado", boletinsFinais: [...item.noticia.boletins_confirmados_ia] }
-          : item
-      )
+      atual.map((item) => {
+        if (item.noticia.id !== id) return item
+        // Se o item eh orfa (IA nao classificou em nenhum boletim), nao pode aprovar sem escolher boletim.
+        // Nesse caso, forcamos abrir o ajuste manual pro usuario escolher.
+        if (item.noticia.boletins_confirmados_ia.length === 0) {
+          toast.info("Item sem sugestao da IA. Escolha manualmente em quais boletins incluir.")
+          return item
+        }
+        return {
+          ...item,
+          status: "aprovado",
+          boletinsFinais: [...item.noticia.boletins_confirmados_ia],
+        }
+      })
     )
+    // Para itens sem sugestao da IA, abrir o painel de ajuste automaticamente
+    const item = itens.find((i) => i.noticia.id === id)
+    if (item && item.noticia.boletins_confirmados_ia.length === 0) {
+      setAjusteAbertoId(id)
+      return
+    }
     setAjusteAbertoId((atual) => (atual === id ? null : atual))
     toast.success("Item aprovado")
-  }, [])
+  }, [itens])
 
   const rejeitar = useCallback((id: string) => {
     setItens((atual) =>
@@ -142,11 +161,17 @@ export function Dashboard({ dataExtenso, janelaTemporal, noticias }: DashboardPr
   const salvarAjustes = useCallback((id: string, boletins: BoletimId[]) => {
     setItens((atual) =>
       atual.map((item) =>
-        item.noticia.id === id ? { ...item, status: "ajustado", boletinsFinais: boletins } : item
+        item.noticia.id === id
+          ? {
+              ...item,
+              status: boletins.length > 0 ? "ajustado" : "rejeitado",
+              boletinsFinais: boletins,
+            }
+          : item
       )
     )
     setAjusteAbertoId(null)
-    toast.success("Ajustes salvos")
+    toast.success(boletins.length > 0 ? "Ajustes salvos" : "Item removido de todos os boletins")
   }, [])
 
   const aprovarTodosPendentes = useCallback(() => {
@@ -154,6 +179,8 @@ export function Dashboard({ dataExtenso, janelaTemporal, noticias }: DashboardPr
     setItens((atual) =>
       atual.map((item) => {
         if (item.status !== "pendente") return item
+        // So aprova pendentes que tem sugestao da IA (nao aprova orfaos sem escolher boletim)
+        if (item.noticia.boletins_confirmados_ia.length === 0) return item
         quantidade++
         return {
           ...item,
@@ -162,7 +189,11 @@ export function Dashboard({ dataExtenso, janelaTemporal, noticias }: DashboardPr
         }
       })
     )
-    toast.success(quantidade === 1 ? "1 item pendente aprovado" : `${quantidade} itens pendentes aprovados`)
+    if (quantidade === 0) {
+      toast.info("Nenhum item pendente tem sugestao da IA para aprovacao automatica")
+    } else {
+      toast.success(quantidade === 1 ? "1 item pendente aprovado" : `${quantidade} itens pendentes aprovados`)
+    }
   }, [])
 
   const adicionarItemManual = useCallback((noticia: Noticia) => {
@@ -180,7 +211,7 @@ export function Dashboard({ dataExtenso, janelaTemporal, noticias }: DashboardPr
           .map((item) => item.noticia)
         localStorage.setItem(STORAGE_KEY_MANUAIS, JSON.stringify(manuais))
       } catch {
-        // Ignora erros de escrita no localStorage
+        // Ignora erros
       }
       return novaLista
     })
@@ -188,19 +219,25 @@ export function Dashboard({ dataExtenso, janelaTemporal, noticias }: DashboardPr
 
   const resumoConfirmacao = useMemo(() => {
     const incluidos = itens.filter(
-      (item) => item.status !== "rejeitado" && item.boletinsFinais.length > 0
+      (item) =>
+        item.status !== "rejeitado" &&
+        item.status !== "pendente" &&
+        item.boletinsFinais.length > 0
     ).length
+
     const boletinsGerados = BOLETIM_IDS.filter((id) => contagemBoletins[id] > 0).map((id) => ({
       boletim: id,
       quantidade: contagemBoletins[id],
     }))
+
     return {
       incluidos,
       rejeitados: stats.rejeitados,
       ajustados: stats.ajustados,
+      pendentesDescartados: stats.pendentes,
       boletinsGerados,
     }
-  }, [itens, contagemBoletins, stats.rejeitados, stats.ajustados])
+  }, [itens, contagemBoletins, stats.rejeitados, stats.ajustados, stats.pendentes])
 
   const confirmarRevisao = useCallback(async () => {
     setEnviando(true)
@@ -365,7 +402,7 @@ export function Dashboard({ dataExtenso, janelaTemporal, noticias }: DashboardPr
         <Button
           size="lg"
           className="h-12 px-6 text-base shadow-lg"
-          disabled={finalizado || stats.pendentes > 0}
+          disabled={finalizado}
           onClick={() => setConfirmAberto(true)}
         >
           {finalizado ? "Revisao confirmada" : "Confirmar revisao"}
