@@ -19,30 +19,29 @@ import { ConfirmDialog } from "./confirm-dialog"
 import { ShortcutsDialog } from "./shortcuts-dialog"
 import { AddItemDialog } from "./add-item-dialog"
 import { BOLETIM_IDS } from "@/lib/boletins"
-import { NOTICIAS_MOCK } from "@/lib/mock-data"
 import type { BoletimId, ItemRevisao, Noticia, StatusRevisao } from "@/lib/types"
 
 interface DashboardProps {
   dataExtenso: string
   janelaTemporal: string
+  noticias: Noticia[]
 }
 
 const STORAGE_KEY_MANUAIS = "noticias-manuais"
 
-function criarItensDoMock(): ItemRevisao[] {
-  return NOTICIAS_MOCK.map((noticia) => ({
+function criarItensDeNoticias(noticias: Noticia[]): ItemRevisao[] {
+  return noticias.map((noticia) => ({
     noticia,
     status: "aprovado" as StatusRevisao,
     boletinsFinais: [...noticia.boletins_confirmados_ia],
   }))
 }
 
-export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
+export function Dashboard({ dataExtenso, janelaTemporal, noticias }: DashboardProps) {
   // Flag "mounted" - garante que so renderizamos o conteudo depois da hidratacao completa.
-  // Esta eh a solucao mais robusta contra hydration mismatch.
   const [mounted, setMounted] = useState(false)
 
-  const [itens, setItens] = useState<ItemRevisao[]>(criarItensDoMock)
+  const [itens, setItens] = useState<ItemRevisao[]>(() => criarItensDeNoticias(noticias))
 
   const [statusFiltro, setStatusFiltro] = useState<StatusFiltro>("todos")
   const [boletimFiltro, setBoletimFiltro] = useState<BoletimId | "todos">("todos")
@@ -54,7 +53,6 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
   const [finalizado, setFinalizado] = useState(false)
 
   // Marca como "mounted" e carrega itens manuais do localStorage.
-  // Roda apenas uma vez, no cliente, depois da hidratacao.
   useEffect(() => {
     setMounted(true)
 
@@ -281,8 +279,6 @@ export function Dashboard({ dataExtenso, janelaTemporal }: DashboardProps) {
     return () => window.removeEventListener("keydown", aoTeclar)
   }, [mounted, focadoId, itensFiltrados, confirmAberto, ajudaAberta, finalizado, aprovar, rejeitar])
 
-  // Enquanto nao esta "mounted", renderiza apenas o header e um placeholder.
-  // Isso previne QUALQUER hydration mismatch, pois o servidor tambem renderiza so isso.
   if (!mounted) {
     return (
       <div className="flex min-h-svh flex-col">
