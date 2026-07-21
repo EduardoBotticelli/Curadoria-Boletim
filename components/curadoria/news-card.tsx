@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from "react"
 import {
-  CheckIcon,
   ChevronDownIcon,
   ExternalLinkIcon,
+  PlusCircleIcon,
   SlidersHorizontalIcon,
   XIcon,
 } from "lucide-react"
@@ -75,6 +75,23 @@ export function NewsCard({
       window.open(noticia.url, "_blank", "noopener,noreferrer")
     }
   }
+
+  // Botoes contextuais por status:
+  // - Aprovado / Ajustado: [Ajustar boletins] + [Remover]
+  // - Pendente:            [Incluir no boletim] (usa o painel de ajuste)
+  // - Rejeitado:           [Ajustar boletins]
+  const mostrarBotaoAjustar = status === "aprovado" || status === "ajustado" || status === "rejeitado"
+  const mostrarBotaoRemover = status === "aprovado" || status === "ajustado"
+  const mostrarBotaoIncluir = status === "pendente"
+
+  // Referencia funcao onAprovar para evitar warning de "prop nao usada"
+  // Nao chamamos porque o fluxo novo eh totalmente baseado em ajuste manual.
+  void onAprovar
+
+  const totalBotoes =
+    (mostrarBotaoAjustar ? 1 : 0) + (mostrarBotaoRemover ? 1 : 0) + (mostrarBotaoIncluir ? 1 : 0)
+  const gridClasse =
+    totalBotoes === 2 ? "grid grid-cols-1 gap-2 sm:grid-cols-2" : "grid grid-cols-1 gap-2"
 
   return (
     <article
@@ -227,47 +244,59 @@ export function NewsCard({
 
       <Separator />
 
-      {/* Acoes */}
+      {/* Acoes contextuais por status */}
       <div className="flex flex-col gap-2 p-4 pt-3">
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <Button
-            size="lg"
-            disabled={desabilitado}
-            onClick={(e) => {
-              e.stopPropagation()
-              onAprovar()
-            }}
-          >
-            <CheckIcon data-icon="inline-start" />
-            Aprovar como sugerido
-          </Button>
-          <Button
-            variant="outline"
-            size="lg"
-            disabled={desabilitado}
-            className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            onClick={(e) => {
-              e.stopPropagation()
-              onRejeitar()
-            }}
-          >
-            <XIcon data-icon="inline-start" />
-            Remover de tudo
-          </Button>
-          <Button
-            variant="outline"
-            size="lg"
-            disabled={desabilitado}
-            className="border-info/40 text-info hover:bg-info/10 hover:text-info"
-            aria-expanded={ajusteAberto}
-            onClick={(e) => {
-              e.stopPropagation()
-              onAbrirAjuste(!ajusteAberto)
-            }}
-          >
-            <SlidersHorizontalIcon data-icon="inline-start" />
-            Ajustar boletins
-          </Button>
+        <div className={gridClasse}>
+          {/* Botao Ajustar boletins - aparece em Aprovado, Ajustado e Rejeitado */}
+          {mostrarBotaoAjustar && (
+            <Button
+              variant="outline"
+              size="lg"
+              disabled={desabilitado}
+              className="border-info/40 text-info hover:bg-info/10 hover:text-info"
+              aria-expanded={ajusteAberto}
+              onClick={(e) => {
+                e.stopPropagation()
+                onAbrirAjuste(!ajusteAberto)
+              }}
+            >
+              <SlidersHorizontalIcon data-icon="inline-start" />
+              Ajustar boletins
+            </Button>
+          )}
+
+          {/* Botao Incluir no boletim - aparece em Pendente */}
+          {mostrarBotaoIncluir && (
+            <Button
+              size="lg"
+              disabled={desabilitado}
+              aria-expanded={ajusteAberto}
+              onClick={(e) => {
+                e.stopPropagation()
+                onAbrirAjuste(!ajusteAberto)
+              }}
+            >
+              <PlusCircleIcon data-icon="inline-start" />
+              Incluir no boletim
+            </Button>
+          )}
+
+          {/* Botao Remover - aparece em Aprovado e Ajustado */}
+          {mostrarBotaoRemover && (
+            <Button
+              variant="outline"
+              size="lg"
+              disabled={desabilitado}
+              className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={(e) => {
+                e.stopPropagation()
+                onRejeitar()
+              }}
+            >
+              <XIcon data-icon="inline-start" />
+              Remover
+            </Button>
+          )}
         </div>
 
         {ajusteAberto && (
