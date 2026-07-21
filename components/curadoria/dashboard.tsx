@@ -98,7 +98,7 @@ export function Dashboard({ dataExtenso, janelaTemporal, noticias }: DashboardPr
   const contagemBoletins = useMemo(() => {
     const contagem = Object.fromEntries(BOLETIM_IDS.map((id) => [id, 0])) as Record<BoletimId, number>
     for (const item of itens) {
-      // Nao conta itens rejeitados nem pendentes (pendente = orfa que nao foi resgatada)
+      // Nao conta itens rejeitados nem pendentes
       if (item.status === "rejeitado" || item.status === "pendente") continue
       for (const boletim of item.boletinsFinais) contagem[boletim]++
     }
@@ -125,8 +125,6 @@ export function Dashboard({ dataExtenso, janelaTemporal, noticias }: DashboardPr
     setItens((atual) =>
       atual.map((item) => {
         if (item.noticia.id !== id) return item
-        // Se o item eh orfa (IA nao classificou em nenhum boletim), nao pode aprovar sem escolher boletim.
-        // Nesse caso, forcamos abrir o ajuste manual pro usuario escolher.
         if (item.noticia.boletins_confirmados_ia.length === 0) {
           toast.info("Item sem sugestao da IA. Escolha manualmente em quais boletins incluir.")
           return item
@@ -138,7 +136,6 @@ export function Dashboard({ dataExtenso, janelaTemporal, noticias }: DashboardPr
         }
       })
     )
-    // Para itens sem sugestao da IA, abrir o painel de ajuste automaticamente
     const item = itens.find((i) => i.noticia.id === id)
     if (item && item.noticia.boletins_confirmados_ia.length === 0) {
       setAjusteAbertoId(id)
@@ -155,7 +152,7 @@ export function Dashboard({ dataExtenso, janelaTemporal, noticias }: DashboardPr
       )
     )
     setAjusteAbertoId((atual) => (atual === id ? null : atual))
-    toast("Item rejeitado")
+    toast("Item removido do boletim")
   }, [])
 
   const salvarAjustes = useCallback((id: string, boletins: BoletimId[]) => {
@@ -172,28 +169,6 @@ export function Dashboard({ dataExtenso, janelaTemporal, noticias }: DashboardPr
     )
     setAjusteAbertoId(null)
     toast.success(boletins.length > 0 ? "Ajustes salvos" : "Item removido de todos os boletins")
-  }, [])
-
-  const aprovarTodosPendentes = useCallback(() => {
-    let quantidade = 0
-    setItens((atual) =>
-      atual.map((item) => {
-        if (item.status !== "pendente") return item
-        // So aprova pendentes que tem sugestao da IA (nao aprova orfaos sem escolher boletim)
-        if (item.noticia.boletins_confirmados_ia.length === 0) return item
-        quantidade++
-        return {
-          ...item,
-          status: "aprovado",
-          boletinsFinais: [...item.noticia.boletins_confirmados_ia],
-        }
-      })
-    )
-    if (quantidade === 0) {
-      toast.info("Nenhum item pendente tem sugestao da IA para aprovacao automatica")
-    } else {
-      toast.success(quantidade === 1 ? "1 item pendente aprovado" : `${quantidade} itens pendentes aprovados`)
-    }
   }, [])
 
   const adicionarItemManual = useCallback((noticia: Noticia) => {
@@ -357,8 +332,6 @@ export function Dashboard({ dataExtenso, janelaTemporal, noticias }: DashboardPr
           boletimFiltro={boletimFiltro}
           onBoletimChange={setBoletimFiltro}
           contagemBoletins={contagemBoletins}
-          pendentes={stats.pendentes}
-          onAprovarTodosPendentes={aprovarTodosPendentes}
           desabilitado={finalizado}
         />
 
