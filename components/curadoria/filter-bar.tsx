@@ -1,17 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { CheckCheckIcon } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
 import {
   Select,
   SelectContent,
@@ -32,8 +22,6 @@ interface FilterBarProps {
   boletimFiltro: BoletimId | "todos"
   onBoletimChange: (boletim: BoletimId | "todos") => void
   contagemBoletins: Record<BoletimId, number>
-  pendentes: number
-  onAprovarTodosPendentes: () => void
   desabilitado?: boolean
 }
 
@@ -43,12 +31,7 @@ export function FilterBar({
   boletimFiltro,
   onBoletimChange,
   contagemBoletins,
-  pendentes,
-  onAprovarTodosPendentes,
-  desabilitado = false,
 }: FilterBarProps) {
-  const [confirmBulkAberto, setConfirmBulkAberto] = useState(false)
-
   return (
     <section aria-label="Filtros" className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -63,15 +46,6 @@ export function FilterBar({
             <TabsTrigger value="rejeitado">Rejeitados</TabsTrigger>
           </TabsList>
         </Tabs>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={pendentes === 0 || desabilitado}
-          onClick={() => setConfirmBulkAberto(true)}
-        >
-          <CheckCheckIcon data-icon="inline-start" />
-          Aprovar todos os pendentes
-        </Button>
       </div>
 
       {/* Chips de boletim (desktop/tablet) */}
@@ -119,32 +93,6 @@ export function FilterBar({
           </SelectContent>
         </Select>
       </div>
-
-      <Dialog open={confirmBulkAberto} onOpenChange={setConfirmBulkAberto}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Aprovar todos os pendentes?</DialogTitle>
-            <DialogDescription>
-              {pendentes === 1
-                ? "1 item pendente será aprovado com os boletins sugeridos pela IA."
-                : `${pendentes} itens pendentes serão aprovados com os boletins sugeridos pela IA.`}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmBulkAberto(false)}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={() => {
-                onAprovarTodosPendentes()
-                setConfirmBulkAberto(false)
-              }}
-            >
-              Aprovar todos
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </section>
   )
 }
