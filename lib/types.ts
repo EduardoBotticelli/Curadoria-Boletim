@@ -58,4 +58,7 @@ export interface BoletimMetadata {
   fontes_sem_publicacao: number
   fontes_sem_resultado: number
   fontes_com_erro_tecnico: number
+  fontes_em_defeso: string[]
+}
+  fontes_com_erro_tecnico: number
 }
