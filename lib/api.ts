@@ -3,7 +3,6 @@ import type { BoletimId, BoletimMetadata, Noticia } from "./types"
 const BOLETIM_URL =
   "https://raw.githubusercontent.com/EduardoBotticelli/boletim-automacao/refs/heads/main/output/boletim.json"
 
-// Estrutura do JSON como vem do backend Python
 interface BackendBoletimRejeitado {
   boletim: string
   motivo: string
@@ -30,6 +29,9 @@ interface BackendJson {
   fontes_sem_publicacao_hoje?: Array<{ fonte: string; motivo: string }>
   fontes_sem_resultado?: Array<{ fonte: string; motivo: string }>
   fontes_com_erro_tecnico?: Array<{ fonte: string; motivo: string }>
+  boletins_config?: {
+    fontes_em_defeso?: string[]
+  }
 }
 
 const BOLETIM_IDS_VALIDOS: BoletimId[] = [
@@ -54,8 +56,6 @@ function filtrarBoletinsValidos(ids: string[] | undefined): BoletimId[] {
 }
 
 function converterItem(item: BackendItem, indice: number): Noticia {
-  // Prioriza o campo "boletins" (resultado final Filtro 1 + Filtro 2 do backend).
-  // Se estiver vazio, usa "boletins_confirmados" como fallback.
   const boletinsBrutos =
     item.boletins && item.boletins.length > 0 ? item.boletins : item.boletins_confirmados || []
 
@@ -91,13 +91,8 @@ export interface DadosBoletim {
   metadata: BoletimMetadata
 }
 
-/**
- * Busca o boletim.json real do GitHub e converte para o formato do frontend.
- * Roda no servidor (Server Component), nao no navegador do usuario.
- */
 export async function buscarBoletimReal(): Promise<DadosBoletim> {
   try {
-    // Revalida a cada 5 minutos (evita spam ao GitHub)
     const resposta = await fetch(BOLETIM_URL, {
       next: { revalidate: 300 },
     })
@@ -110,6 +105,10 @@ export async function buscarBoletimReal(): Promise<DadosBoletim> {
     const itens = Array.isArray(json.itens) ? json.itens : []
     const noticias = itens.map(converterItem)
 
+    const fontesEmDefeso = Array.isArray(json.boletins_config?.fontes_em_defeso)
+      ? json.boletins_config.fontes_em_defeso
+      : []
+
     const metadata: BoletimMetadata = {
       data_execucao: json.data_execucao || new Date().toISOString().split("T")[0],
       janela_aplicada: {
@@ -119,12 +118,12 @@ export async function buscarBoletimReal(): Promise<DadosBoletim> {
       fontes_sem_publicacao: (json.fontes_sem_publicacao_hoje || []).length,
       fontes_sem_resultado: (json.fontes_sem_resultado || []).length,
       fontes_com_erro_tecnico: (json.fontes_com_erro_tecnico || []).length,
+      fontes_em_defeso: fontesEmDefeso,
     }
 
     return { noticias, metadata }
   } catch (erro) {
     console.error("[buscarBoletimReal] Falha ao buscar boletim:", erro)
-    // Retorna dados vazios em caso de erro (site mostra "nenhum item")
     return {
       noticias: [],
       metadata: {
@@ -133,6 +132,7 @@ export async function buscarBoletimReal(): Promise<DadosBoletim> {
         fontes_sem_publicacao: 0,
         fontes_sem_resultado: 0,
         fontes_com_erro_tecnico: 0,
+        fontes_em_defeso: [],
       },
     }
   }
