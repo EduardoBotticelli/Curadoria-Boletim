@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { ArrowRightIcon, CheckCircle2Icon, InboxIcon } from "lucide-react"
+import { ArrowRightIcon, CheckCircle2Icon, InboxIcon, TriangleAlertIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import {
@@ -25,6 +25,7 @@ interface DashboardProps {
   dataExtenso: string
   janelaTemporal: string
   noticias: Noticia[]
+  fontesEmDefeso: string[]
 }
 
 const STORAGE_KEY_MANUAIS = "noticias-manuais"
@@ -45,7 +46,7 @@ function criarItensDeNoticias(noticias: Noticia[]): ItemRevisao[] {
   })
 }
 
-export function Dashboard({ dataExtenso, janelaTemporal, noticias }: DashboardProps) {
+export function Dashboard({ dataExtenso, janelaTemporal, noticias, fontesEmDefeso }: DashboardProps) {
   const [mounted, setMounted] = useState(false)
   const [itens, setItens] = useState<ItemRevisao[]>(() => criarItensDeNoticias(noticias))
   const [statusFiltro, setStatusFiltro] = useState<StatusFiltro>("todos")
@@ -317,6 +318,17 @@ export function Dashboard({ dataExtenso, janelaTemporal, noticias }: DashboardPr
       <StatsBar {...stats} />
 
       <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 px-4 py-5 pb-28">
+        {fontesEmDefeso.length > 0 && (
+          <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4">
+            <TriangleAlertIcon className="size-5 shrink-0 text-amber-600 mt-0.5" aria-hidden="true" />
+            <div className="text-sm text-amber-900">
+              <span className="font-semibold">Fontes em defeso eleitoral:</span>{" "}
+              {fontesEmDefeso.map((f) => f.split(" | ")[0]).join(", ")} nao estao publicando
+              durante o periodo eleitoral.
+            </div>
+          </div>
+        )}
+
         {finalizado && (
           <div className="flex items-center gap-3 rounded-xl border border-success/40 bg-success/10 p-4">
             <CheckCircle2Icon className="size-5 shrink-0 text-success" aria-hidden="true" />
