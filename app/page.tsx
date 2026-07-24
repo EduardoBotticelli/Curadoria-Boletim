@@ -32,7 +32,6 @@ function formatarJanela(inicio: string, fim: string): string {
 
   function formatar(iso: string): string {
     if (!iso) return "-"
-    // Formato do backend: "2026-07-14T00:00" ou "2026-07-14"
     const [data, hora] = iso.split("T")
     const partesData = data.split("-")
     if (partesData.length !== 3) return iso
@@ -61,6 +60,7 @@ export default async function Page() {
       noticias={noticias}
       dataExtenso={dataExtenso}
       janelaTemporal={janelaTemporal}
+      fontesEmDefeso={metadata.fontes_em_defeso}
     />
   )
 }
