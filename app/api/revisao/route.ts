@@ -7,16 +7,122 @@ const GITHUB_REPO = process.env.GITHUB_REPO || "boletim-automacao"
 const GITHUB_BRANCH = process.env.GITHUB_BRANCH || "main"
 const DECISOES_PATH = "output/decisoes_alice.json"
 
-interface DecisaoItem {
-  id: string
-  status: string
-  boletins: string[]
-  noticia?: unknown // Payload para itens manuais
+const VERSAO_FORMATO = 2
+
+/**
+ * Uma decisao ja no formato canonico.
+ * O contrato completo esta em lib/types.ts (DecisaoExportada) e e lido pelo
+ * scripts/gerar_boletim_final.py do repo boletim-automacao.
+ */
+interface DecisaoCanonica {
+  id?: string
+  status?: string
+  status_portal?: string
+  origem?: string
+  url?: string
+  fonte?: string
+  titulo?: string
+  radares_finais?: string[]
+  boletins?: string[]
+  [campo: string]: unknown
 }
 
-interface RevisaoPayload {
-  confirmadoEm: string
-  itens: DecisaoItem[]
+/** Formato antigo do portal, mantido para nao quebrar uma aba ja aberta. */
+interface DecisaoLegada {
+  id?: string
+  status?: string
+  boletins?: string[]
+  [campo: string]: unknown
+}
+
+interface CorpoRecebido {
+  versao_formato?: number
+  revisao_concluida?: boolean
+  confirmado_em?: string
+  confirmadoEm?: string
+  data_execucao?: string
+  decisoes?: DecisaoCanonica[]
+  itens?: DecisaoLegada[]
+}
+
+interface PayloadDecisoes {
+  versao_formato: number
+  revisao_concluida: true
+  origem: string
+  confirmado_em: string
+  data_execucao: string
+  total_itens: number
+  total_aprovados: number
+  total_rejeitados: number
+  decisoes: DecisaoCanonica[]
+}
+
+const STATUS_CANONICOS = new Set(["aprovado", "rejeitado"])
+
+/**
+ * Converte o corpo recebido no payload canonico gravado no repositorio.
+ *
+ * Duas entradas sao aceitas:
+ * - "decisoes": formato atual, ja canonico;
+ * - "itens": formato antigo ({ id, status, boletins }). Ele e convertido, mas
+ *   sem url/fonte/titulo o gerar_boletim_final.py nao consegue casar as
+ *   decisoes com o boletim.json, entao a requisicao e recusada com uma
+ *   mensagem explicita em vez de gravar um arquivo que nao gera nada.
+ */
+function normalizarCorpo(corpo: CorpoRecebido): PayloadDecisoes | { erro: string } {
+  const confirmadoEm =
+    corpo.confirmado_em || corpo.confirmadoEm || new Date().toISOString()
+
+  if (Array.isArray(corpo.decisoes)) {
+    const decisoes = corpo.decisoes
+
+    if (decisoes.length === 0) {
+      return { erro: "A revisao nao contem nenhuma decisao." }
+    }
+
+    for (const decisao of decisoes) {
+      const status = String(decisao.status || "").toLowerCase()
+      if (!STATUS_CANONICOS.has(status)) {
+        return {
+          erro: `Decisao com status invalido: "${decisao.status}". Use "aprovado" ou "rejeitado".`,
+        }
+      }
+
+      const temChave =
+        Boolean(decisao.url) || (Boolean(decisao.fonte) && Boolean(decisao.titulo))
+      if (!temChave) {
+        return {
+          erro: "Ha decisao sem url e sem fonte + titulo; o backend nao conseguiria casar o item.",
+        }
+      }
+    }
+
+    const aprovados = decisoes.filter(
+      (decisao) => String(decisao.status).toLowerCase() === "aprovado"
+    ).length
+
+    return {
+      versao_formato: corpo.versao_formato || VERSAO_FORMATO,
+      revisao_concluida: true,
+      origem: "portal-curadoria",
+      confirmado_em: confirmadoEm,
+      data_execucao: corpo.data_execucao || "",
+      total_itens: decisoes.length,
+      total_aprovados: aprovados,
+      total_rejeitados: decisoes.length - aprovados,
+      decisoes,
+    }
+  }
+
+  if (Array.isArray(corpo.itens)) {
+    return {
+      erro:
+        "Formato de revisao desatualizado (campo 'itens' sem url/fonte/titulo). " +
+        "Recarregue a pagina para carregar a versao atual do portal.",
+    }
+  }
+
+  return { erro: "Payload invalido (campo 'decisoes' obrigatorio)." }
 }
 
 /**
@@ -56,7 +162,7 @@ async function buscarSha(): Promise<string | null> {
 /**
  * Cria ou atualiza o arquivo decisoes_alice.json no repo do backend.
  */
-async function commitDecisoes(payload: RevisaoPayload): Promise<void> {
+async function commitDecisoes(payload: PayloadDecisoes): Promise<void> {
   const shaAtual = await buscarSha()
 
   const conteudoJson = JSON.stringify(payload, null, 2)
@@ -72,7 +178,7 @@ async function commitDecisoes(payload: RevisaoPayload): Promise<void> {
   }
 
   const body: CommitBody = {
-    message: `chore: decisoes da revisao em ${payload.confirmadoEm}`,
+    message: `chore: decisoes da revisao em ${payload.confirmado_em}`,
     content: conteudoBase64,
     branch: GITHUB_BRANCH,
   }
@@ -134,27 +240,21 @@ export async function POST(request: Request) {
   }
 
   // Le e valida o payload
-  let payload: RevisaoPayload
+  let corpo: CorpoRecebido
   try {
-    payload = (await request.json()) as RevisaoPayload
+    corpo = (await request.json()) as CorpoRecebido
   } catch {
     return NextResponse.json({ erro: "Payload invalido (JSON malformado)" }, { status: 400 })
   }
 
-  if (!payload || !Array.isArray(payload.itens)) {
-    return NextResponse.json(
-      { erro: "Payload invalido (campo 'itens' obrigatorio)" },
-      { status: 400 }
-    )
-  }
-
-  if (!payload.confirmadoEm) {
-    payload.confirmadoEm = new Date().toISOString()
+  const normalizado = normalizarCorpo(corpo || {})
+  if ("erro" in normalizado) {
+    return NextResponse.json({ erro: normalizado.erro }, { status: 400 })
   }
 
   // 1. Commita decisoes no repo do backend
   try {
-    await commitDecisoes(payload)
+    await commitDecisoes(normalizado)
   } catch (erro) {
     console.error("[api/revisao] Erro ao commitar decisoes:", erro)
     return NextResponse.json(
@@ -183,7 +283,8 @@ export async function POST(request: Request) {
   return NextResponse.json({
     sucesso: true,
     mensagem: "Revisao confirmada. Boletins serao gerados em ate 2 minutos.",
-    totalItens: payload.itens.length,
-    confirmadoEm: payload.confirmadoEm,
+    totalItens: normalizado.total_itens,
+    totalAprovados: normalizado.total_aprovados,
+    confirmadoEm: normalizado.confirmado_em,
   })
 }

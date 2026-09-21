@@ -31,8 +31,15 @@ interface NewsCardProps {
 }
 
 function formatarData(iso: string): string {
-  const [ano, mes, dia] = iso.split("-").map(Number)
-  return new Date(ano, mes - 1, dia).toLocaleDateString("pt-BR")
+  // O pipeline grava data_publicacao vazia quando nao consegue interpretar a
+  // data da publicacao, entao o formato nem sempre e AAAA-MM-DD.
+  const [ano, mes, dia] = (iso || "").split("-").map(Number)
+  if (!ano || !mes || !dia) return "Data nao informada"
+
+  const data = new Date(ano, mes - 1, dia)
+  if (Number.isNaN(data.getTime())) return "Data nao informada"
+
+  return data.toLocaleDateString("pt-BR")
 }
 
 export function NewsCard({
