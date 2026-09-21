@@ -8,6 +8,11 @@ import type {
 } from "./types"
 import { VERSAO_FORMATO_DECISOES } from "./types"
 
+/** Itens que ainda nao receberam decisao da pessoa que revisa. */
+export function itensPendentes(itens: ItemRevisao[]): ItemRevisao[] {
+  return itens.filter((item) => item.status === "pendente")
+}
+
 /**
  * Monta a decisao canonica de um item.
  *
@@ -15,21 +20,38 @@ import { VERSAO_FORMATO_DECISOES } from "./types"
  * - "url", "fonte" e "titulo" sao os valores ORIGINAIS, porque sao a chave de
  *   casamento com o item do boletim.json;
  * - "status" so assume "aprovado" ou "rejeitado";
- * - o item so e aprovado se sobrou pelo menos um Radar, senao o script
- *   bloquearia a geracao com "item aprovado sem Radar final";
  * - itens manuais levam o conteudo completo em "noticia", porque nao existem
  *   no boletim.json.
+ *
+ * Item pendente nao vira decisao: quem revisa precisa dizer o que fazer com
+ * ele. Converter pendente em rejeitado aqui transformaria "ninguem olhou"
+ * em "foi recusado", que sao coisas diferentes e nao da para distinguir
+ * depois. A funcao lanca erro nesse caso; a interface impede que isso
+ * chegue ate aqui.
  */
 export function montarDecisao(item: ItemRevisao): DecisaoExportada {
   const { noticia } = item
 
+  if (item.status === "pendente") {
+    throw new Error(
+      `Item ainda pendente de revisao: "${noticia.titulo}". ` +
+        "Nenhum item pendente pode virar decisao."
+    )
+  }
+
   const incluir = item.status === "aprovado" || item.status === "ajustado"
   const radares = incluir ? item.boletinsFinais : []
-  const aprovado = incluir && radares.length > 0
+
+  if (incluir && radares.length === 0) {
+    throw new Error(
+      `Item aprovado sem nenhum Radar: "${noticia.titulo}". ` +
+        "Escolha ao menos um Radar ou remova o item."
+    )
+  }
 
   const decisao: DecisaoExportada = {
     id: noticia.id,
-    status: aprovado ? "aprovado" : "rejeitado",
+    status: incluir ? "aprovado" : "rejeitado",
     status_portal: item.status,
     origem: noticia.origem,
     url: noticia.url,
@@ -73,11 +95,25 @@ export function montarDecisao(item: ItemRevisao): DecisaoExportada {
   return decisao
 }
 
-/** Monta o payload completo enviado para POST /api/revisao. */
+/**
+ * Monta o payload completo enviado para POST /api/revisao.
+ *
+ * Lanca erro se ainda houver item pendente: a revisao so pode ser concluida
+ * depois que cada item recebeu uma decisao explicita.
+ */
 export function montarPayloadRevisao(
   itens: ItemRevisao[],
   dataExecucao: string
 ): RevisaoPayload {
+  const pendentes = itensPendentes(itens)
+
+  if (pendentes.length > 0) {
+    throw new Error(
+      `A revisao tem ${pendentes.length} item(ns) pendente(s). ` +
+        "Revise todos antes de confirmar."
+    )
+  }
+
   const decisoes = itens.map(montarDecisao)
   const aprovados = decisoes.filter((d) => d.status === "aprovado").length
 

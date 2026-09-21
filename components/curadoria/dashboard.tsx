@@ -274,14 +274,38 @@ export function Dashboard({
       incluidos,
       rejeitados: stats.rejeitados,
       ajustados: stats.ajustados,
-      pendentes: stats.pendentes,
       boletinsGerados,
     }
-  }, [itens, contagemBoletins, stats.rejeitados, stats.ajustados, stats.pendentes])
+  }, [itens, contagemBoletins, stats.rejeitados, stats.ajustados])
+
+  /**
+   * A revisao so pode ser concluida quando todo item tem decisao.
+   * Item pendente nao e convertido nem descartado: ele bloqueia.
+   */
+  const bloqueadoPorPendencias = stats.pendentes > 0
+
+  const textoPendencias =
+    stats.pendentes === 1
+      ? "1 item ainda precisa ser revisado"
+      : `${stats.pendentes} itens ainda precisam ser revisados`
 
   const confirmarRevisao = useCallback(async () => {
     if (itens.length === 0) {
       toast.error("Nao ha itens para revisar.")
+      return
+    }
+
+    // Rede de seguranca: o botao ja fica desabilitado nesse caso, e o
+    // montarPayloadRevisao tambem recusa. Nenhum item pendente e convertido
+    // em rejeitado nem descartado em silencio.
+    const pendentes = itens.filter((item) => item.status === "pendente")
+    if (pendentes.length > 0) {
+      toast.error(
+        pendentes.length === 1
+          ? "Ainda ha 1 item pendente. Revise-o antes de confirmar."
+          : `Ainda ha ${pendentes.length} itens pendentes. Revise todos antes de confirmar.`
+      )
+      setConfirmAberto(false)
       return
     }
 
@@ -323,7 +347,12 @@ export function Dashboard({
 
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault()
-        if (!finalizado) setConfirmAberto(true)
+        if (finalizado) return
+        if (bloqueadoPorPendencias) {
+          toast.error(`${textoPendencias}. Revise todos antes de confirmar.`)
+          return
+        }
+        setConfirmAberto(true)
         return
       }
 
@@ -363,7 +392,18 @@ export function Dashboard({
 
     window.addEventListener("keydown", aoTeclar)
     return () => window.removeEventListener("keydown", aoTeclar)
-  }, [mounted, focadoId, itensFiltrados, confirmAberto, ajudaAberta, finalizado, aprovar, rejeitar])
+  }, [
+    mounted,
+    focadoId,
+    itensFiltrados,
+    confirmAberto,
+    ajudaAberta,
+    finalizado,
+    bloqueadoPorPendencias,
+    textoPendencias,
+    aprovar,
+    rejeitar,
+  ])
 
   if (!mounted) {
     return (
@@ -470,15 +510,35 @@ export function Dashboard({
         <AddItemDialog onAdicionar={adicionarItemManual} desabilitado={finalizado} />
       </div>
 
-      <div className="fixed right-4 bottom-4 z-40 md:right-8 md:bottom-8">
+      <div className="fixed right-4 bottom-4 z-40 flex flex-col items-end gap-2 md:right-8 md:bottom-8">
+        {bloqueadoPorPendencias && !finalizado && (
+          <p
+            id="aviso-pendencias"
+            role="status"
+            className="max-w-xs rounded-lg border border-warning/40 bg-background/95 px-3 py-2 text-right text-xs text-foreground/80 shadow-lg backdrop-blur"
+          >
+            {textoPendencias}. Use o filtro &ldquo;Pendentes&rdquo; para
+            encontr&aacute;-{stats.pendentes === 1 ? "lo" : "los"}.
+          </p>
+        )}
+
         <Button
           size="lg"
           className="h-12 px-6 text-base shadow-lg"
-          disabled={finalizado}
+          disabled={finalizado || bloqueadoPorPendencias}
+          aria-describedby={
+            bloqueadoPorPendencias && !finalizado ? "aviso-pendencias" : undefined
+          }
           onClick={() => setConfirmAberto(true)}
         >
-          {finalizado ? "Revisao confirmada" : "Confirmar revisao"}
-          {!finalizado && <ArrowRightIcon data-icon="inline-end" />}
+          {finalizado
+            ? "Revisao confirmada"
+            : bloqueadoPorPendencias
+              ? textoPendencias
+              : "Confirmar revisao"}
+          {!finalizado && !bloqueadoPorPendencias && (
+            <ArrowRightIcon data-icon="inline-end" />
+          )}
         </Button>
       </div>
 
@@ -488,7 +548,6 @@ export function Dashboard({
         incluidos={resumoConfirmacao.incluidos}
         rejeitados={resumoConfirmacao.rejeitados}
         ajustados={resumoConfirmacao.ajustados}
-        pendentes={resumoConfirmacao.pendentes}
         boletinsGerados={resumoConfirmacao.boletinsGerados}
         enviando={enviando}
         onConfirmar={confirmarRevisao}

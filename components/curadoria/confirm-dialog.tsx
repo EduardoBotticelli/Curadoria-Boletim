@@ -22,8 +22,6 @@ interface ConfirmDialogProps {
   incluidos: number
   rejeitados: number
   ajustados: number
-  /** Itens que ficaram sem decisao e serao descartados na geracao final. */
-  pendentes: number
   boletinsGerados: { boletim: BoletimId; quantidade: number }[]
   enviando: boolean
   onConfirmar: () => void
@@ -35,7 +33,6 @@ export function ConfirmDialog({
   incluidos,
   rejeitados,
   ajustados,
-  pendentes,
   boletinsGerados,
   enviando,
   onConfirmar,
@@ -58,14 +55,6 @@ export function ConfirmDialog({
           <li>
             <strong>{ajustados}</strong> {ajustados === 1 ? "item teve os boletins ajustados" : "itens tiveram os boletins ajustados"} manualmente
           </li>
-          {pendentes > 0 && (
-            <li className="text-warning">
-              <strong>{pendentes}</strong>{" "}
-              {pendentes === 1
-                ? "item continua pendente e ser\u00e1 descartado"
-                : "itens continuam pendentes e ser\u00e3o descartados"}
-            </li>
-          )}
         </ul>
 
         <div className="flex flex-col gap-1.5">
