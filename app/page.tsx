@@ -47,7 +47,7 @@ function formatarJanela(inicio: string, fim: string): string {
 }
 
 export default async function Page() {
-  const { noticias, metadata } = await buscarBoletimReal()
+  const { noticias, metadata, erro } = await buscarBoletimReal()
 
   const dataExtenso = formatarDataExtenso(metadata.data_execucao)
   const janelaTemporal = formatarJanela(
@@ -60,7 +60,9 @@ export default async function Page() {
       noticias={noticias}
       dataExtenso={dataExtenso}
       janelaTemporal={janelaTemporal}
+      dataExecucao={metadata.data_execucao}
       fontesEmDefeso={metadata.fontes_em_defeso}
+      erroCarregamento={erro}
     />
   )
 }

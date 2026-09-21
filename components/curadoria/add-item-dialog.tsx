@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { BOLETIM_IDS, BOLETINS } from "@/lib/boletins"
+import { idItemManual } from "@/lib/revisao"
 import type { BoletimId, Noticia } from "@/lib/types"
 
 interface AddItemDialogProps {
@@ -75,18 +76,24 @@ export function AddItemDialog({ onAdicionar, desabilitado }: AddItemDialogProps)
       return
     }
 
+    const fonteLimpa = fonte.trim()
+    const tituloLimpo = titulo.trim()
+    const urlLimpa = url.trim()
+
     const novaNoticia: Noticia = {
-      id: `manual-${Date.now()}`,
-      fonte: fonte.trim(),
+      // Id derivado do conteudo (nao do relogio), para sobreviver a recargas
+      // da pagina e evitar duplicatas do mesmo item.
+      id: idItemManual(urlLimpa, fonteLimpa, tituloLimpo),
+      fonte: fonteLimpa,
       categoria: "Adicionado manualmente",
-      titulo: titulo.trim(),
+      titulo: tituloLimpo,
       data_publicacao: dataPublicacao || dataHojeISO(),
       resumo: resumo.trim(),
       motivo_filtragem: "Item adicionado manualmente pela curadoria.",
       palavras_chave_detectadas: [],
       boletins_confirmados_ia: boletinsSelecionados,
       boletins_rejeitados: [],
-      url: url.trim() || "",
+      url: urlLimpa,
       origem: "manual",
     }
 
@@ -98,12 +105,17 @@ export function AddItemDialog({ onAdicionar, desabilitado }: AddItemDialogProps)
 
   return (
     <Dialog open={aberto} onOpenChange={setAberto}>
-      {/* @ts-ignore - asChild funciona mas os tipos do V0 estão incompletos */}
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm" disabled={desabilitado}>
-          <PlusIcon />
-          Adicionar item
-        </Button>
+      {/*
+        Base UI usa a prop "render", nao "asChild". Com asChild o trigger
+        renderizava um <button> em volta do <Button>, gerando botoes aninhados
+        (HTML invalido). O mesmo padrao "render" ja e usado em
+        components/ui/dialog.tsx e em news-card.tsx.
+      */}
+      <DialogTrigger
+        render={<Button variant="outline" size="sm" disabled={desabilitado} />}
+      >
+        <PlusIcon />
+        Adicionar item
       </DialogTrigger>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>

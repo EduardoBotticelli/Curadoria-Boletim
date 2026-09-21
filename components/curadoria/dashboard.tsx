@@ -19,16 +19,30 @@ import { ConfirmDialog } from "./confirm-dialog"
 import { ShortcutsDialog } from "./shortcuts-dialog"
 import { AddItemDialog } from "./add-item-dialog"
 import { BOLETIM_IDS } from "@/lib/boletins"
-import type { BoletimId, ItemRevisao, Noticia, StatusRevisao } from "@/lib/types"
+import {
+  carregarManuais,
+  carregarProgresso,
+  limparProgresso,
+  montarPayloadRevisao,
+  salvarManuais,
+  salvarProgresso,
+} from "@/lib/revisao"
+import type {
+  BoletimId,
+  FonteEmDefeso,
+  ItemRevisao,
+  Noticia,
+  StatusRevisao,
+} from "@/lib/types"
 
 interface DashboardProps {
   dataExtenso: string
   janelaTemporal: string
+  dataExecucao: string
   noticias: Noticia[]
-  fontesEmDefeso: string[]
+  fontesEmDefeso: FonteEmDefeso[]
+  erroCarregamento: string | null
 }
-
-const STORAGE_KEY_MANUAIS = "noticias-manuais"
 
 /**
  * Cria itens de revisao a partir das noticias.
@@ -46,7 +60,14 @@ function criarItensDeNoticias(noticias: Noticia[]): ItemRevisao[] {
   })
 }
 
-export function Dashboard({ dataExtenso, janelaTemporal, noticias, fontesEmDefeso }: DashboardProps) {
+export function Dashboard({
+  dataExtenso,
+  janelaTemporal,
+  dataExecucao,
+  noticias,
+  fontesEmDefeso,
+  erroCarregamento,
+}: DashboardProps) {
   const [mounted, setMounted] = useState(false)
   const [itens, setItens] = useState<ItemRevisao[]>(() => criarItensDeNoticias(noticias))
   const [statusFiltro, setStatusFiltro] = useState<StatusFiltro>("todos")
@@ -58,31 +79,68 @@ export function Dashboard({ dataExtenso, janelaTemporal, noticias, fontesEmDefes
   const [enviando, setEnviando] = useState(false)
   const [finalizado, setFinalizado] = useState(false)
 
+  // Restaura, ao montar no cliente, os itens manuais e o progresso da revisao
+  // salvos para esta mesma edicao do boletim.
   useEffect(() => {
     setMounted(true)
 
-    try {
-      const salvos = localStorage.getItem(STORAGE_KEY_MANUAIS)
-      if (!salvos) return
-      const manuais: Noticia[] = JSON.parse(salvos)
-      if (!Array.isArray(manuais) || manuais.length === 0) return
+    const manuais = carregarManuais(dataExecucao)
+    const progresso = carregarProgresso(dataExecucao)
 
-      const itensManuais: ItemRevisao[] = manuais.map((noticia) => ({
-        noticia,
-        status: "aprovado" as StatusRevisao,
-        boletinsFinais: [...noticia.boletins_confirmados_ia],
-      }))
+    setItens((atual) => {
+      const idsExistentes = new Set(atual.map((item) => item.noticia.id))
 
-      setItens((atual) => {
-        const idsExistentes = new Set(atual.map((item) => item.noticia.id))
-        const novos = itensManuais.filter((item) => !idsExistentes.has(item.noticia.id))
-        if (novos.length === 0) return atual
-        return [...novos, ...atual]
+      const itensManuais: ItemRevisao[] = manuais
+        .filter((noticia) => !idsExistentes.has(noticia.id))
+        .map((noticia) => ({
+          noticia,
+          status: "aprovado" as StatusRevisao,
+          boletinsFinais: [...noticia.boletins_confirmados_ia],
+        }))
+
+      const lista = [...itensManuais, ...atual]
+
+      return lista.map((item) => {
+        const salvo = progresso[item.noticia.id]
+        if (!salvo) return item
+
+        const boletinsFinais = (salvo.boletinsFinais || []).filter((id): id is BoletimId =>
+          (BOLETIM_IDS as string[]).includes(id)
+        )
+
+        return { ...item, status: salvo.status, boletinsFinais }
       })
-    } catch {
-      // Ignora erros de leitura do localStorage
+    })
+  }, [dataExecucao])
+
+  // Persiste o progresso a cada alteracao, para que um recarregamento acidental
+  // nao descarte a revisao inteira.
+  useEffect(() => {
+    if (!mounted || finalizado) return
+    salvarProgresso(dataExecucao, itens)
+  }, [mounted, finalizado, dataExecucao, itens])
+
+  // As fontes suspensas chegam do backend como objetos { fonte, motivo,
+  // reativar_em }. Antes eram strings, e o portal ainda chamava .split() nelas,
+  // o que quebrava a pagina inteira na hidratacao.
+  const resumoDefeso = useMemo(() => {
+    const motivos = new Set(
+      fontesEmDefeso.map((fonte) => fonte.motivo).filter((motivo) => motivo)
+    )
+    const reativacoes = new Set(
+      fontesEmDefeso.map((fonte) => fonte.reativar_em).filter((data) => data)
+    )
+
+    const partes: string[] = []
+    if (motivos.size > 0) partes.push(`Motivo: ${[...motivos].join("; ")}.`)
+    if (reativacoes.size === 1) {
+      partes.push(`Previsao de retorno: ${[...reativacoes][0]}.`)
+    } else if (reativacoes.size > 1) {
+      partes.push(`Previsoes de retorno: ${[...reativacoes].join(", ")}.`)
     }
-  }, [])
+
+    return partes.join(" ")
+  }, [fontesEmDefeso])
 
   const stats = useMemo(() => {
     const contagem = { aprovado: 0, rejeitado: 0, ajustado: 0, pendente: 0 }
@@ -172,26 +230,32 @@ export function Dashboard({ dataExtenso, janelaTemporal, noticias, fontesEmDefes
     toast.success(boletins.length > 0 ? "Ajustes salvos" : "Item removido de todos os boletins")
   }, [])
 
-  const adicionarItemManual = useCallback((noticia: Noticia) => {
-    const novoItem: ItemRevisao = {
-      noticia,
-      status: "aprovado",
-      boletinsFinais: [...noticia.boletins_confirmados_ia],
-    }
+  const adicionarItemManual = useCallback(
+    (noticia: Noticia) => {
+      const novoItem: ItemRevisao = {
+        noticia,
+        status: "aprovado",
+        boletinsFinais: [...noticia.boletins_confirmados_ia],
+      }
 
-    setItens((atual) => {
-      const novaLista = [novoItem, ...atual]
-      try {
+      setItens((atual) => {
+        // O id manual e derivado do conteudo, entao adicionar o mesmo item
+        // duas vezes apenas atualiza o existente em vez de duplicar.
+        if (atual.some((item) => item.noticia.id === noticia.id)) {
+          toast.info("Esse item ja foi adicionado.")
+          return atual
+        }
+
+        const novaLista = [novoItem, ...atual]
         const manuais = novaLista
           .filter((item) => item.noticia.origem === "manual")
           .map((item) => item.noticia)
-        localStorage.setItem(STORAGE_KEY_MANUAIS, JSON.stringify(manuais))
-      } catch {
-        // Ignora erros
-      }
-      return novaLista
-    })
-  }, [])
+        salvarManuais(dataExecucao, manuais)
+        return novaLista
+      })
+    },
+    [dataExecucao]
+  )
 
   const resumoConfirmacao = useMemo(() => {
     const incluidos = itens.filter(
@@ -210,36 +274,45 @@ export function Dashboard({ dataExtenso, janelaTemporal, noticias, fontesEmDefes
       incluidos,
       rejeitados: stats.rejeitados,
       ajustados: stats.ajustados,
-      pendentesDescartados: stats.pendentes,
+      pendentes: stats.pendentes,
       boletinsGerados,
     }
   }, [itens, contagemBoletins, stats.rejeitados, stats.ajustados, stats.pendentes])
 
   const confirmarRevisao = useCallback(async () => {
+    if (itens.length === 0) {
+      toast.error("Nao ha itens para revisar.")
+      return
+    }
+
     setEnviando(true)
     try {
       const resposta = await fetch("/api/revisao", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          confirmadoEm: new Date().toISOString(),
-          itens: itens.map((item) => ({
-            id: item.noticia.id,
-            status: item.status,
-            boletins: item.boletinsFinais,
-          })),
-        }),
+        body: JSON.stringify(montarPayloadRevisao(itens, dataExecucao)),
       })
-      if (!resposta.ok) throw new Error("Falha ao enviar a revisao")
+
+      if (!resposta.ok) {
+        const dados = await resposta.json().catch(() => null)
+        throw new Error(dados?.erro || "Falha ao enviar a revisao")
+      }
+
+      // A revisao foi aceita pelo backend: o rascunho local nao serve mais.
+      limparProgresso()
       setConfirmAberto(false)
       setFinalizado(true)
       toast.success("Revisao confirmada! Os boletins serao gerados e enviados.")
-    } catch {
-      toast.error("Nao foi possivel confirmar a revisao. Tente novamente.")
+    } catch (erro) {
+      toast.error(
+        erro instanceof Error
+          ? erro.message
+          : "Nao foi possivel confirmar a revisao. Tente novamente."
+      )
     } finally {
       setEnviando(false)
     }
-  }, [itens])
+  }, [itens, dataExecucao])
 
   useEffect(() => {
     if (!mounted) return
@@ -318,13 +391,27 @@ export function Dashboard({ dataExtenso, janelaTemporal, noticias, fontesEmDefes
       <StatsBar {...stats} />
 
       <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 px-4 py-5 pb-28">
+        {erroCarregamento && (
+          <div className="flex items-start gap-3 rounded-xl border border-destructive/40 bg-destructive/10 p-4">
+            <TriangleAlertIcon
+              className="mt-0.5 size-5 shrink-0 text-destructive"
+              aria-hidden="true"
+            />
+            <div className="text-sm text-foreground/90">
+              <span className="font-semibold">Nao foi possivel carregar o boletim.</span>{" "}
+              {erroCarregamento}. Verifique se o workflow do repositorio
+              boletim-automacao ja publicou o output/boletim.json de hoje.
+            </div>
+          </div>
+        )}
+
         {fontesEmDefeso.length > 0 && (
           <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4">
-            <TriangleAlertIcon className="size-5 shrink-0 text-amber-600 mt-0.5" aria-hidden="true" />
+            <TriangleAlertIcon className="mt-0.5 size-5 shrink-0 text-amber-600" aria-hidden="true" />
             <div className="text-sm text-amber-900">
-              <span className="font-semibold">Fontes em defeso eleitoral:</span>{" "}
-              {fontesEmDefeso.map((f) => f.split(" | ")[0]).join(", ")} nao estao publicando
-              durante o periodo eleitoral.
+              <span className="font-semibold">Fontes suspensas nesta edicao:</span>{" "}
+              {fontesEmDefeso.map((fonte) => fonte.fonte).join(", ")}.{" "}
+              {resumoDefeso}
             </div>
           </div>
         )}
@@ -401,6 +488,7 @@ export function Dashboard({ dataExtenso, janelaTemporal, noticias, fontesEmDefes
         incluidos={resumoConfirmacao.incluidos}
         rejeitados={resumoConfirmacao.rejeitados}
         ajustados={resumoConfirmacao.ajustados}
+        pendentes={resumoConfirmacao.pendentes}
         boletinsGerados={resumoConfirmacao.boletinsGerados}
         enviando={enviando}
         onConfirmar={confirmarRevisao}
