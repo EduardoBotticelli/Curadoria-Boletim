@@ -1,5 +1,7 @@
+import { BOLETIM_IDS } from "./boletins"
 import { idEstavel } from "./ids"
 import type {
+  BoletimId,
   DecisaoExportada,
   ItemRevisao,
   Noticia,
@@ -11,6 +13,49 @@ import { VERSAO_FORMATO_DECISOES } from "./types"
 /** Itens que ainda nao receberam decisao da pessoa que revisa. */
 export function itensPendentes(itens: ItemRevisao[]): ItemRevisao[] {
   return itens.filter((item) => item.status === "pendente")
+}
+
+/**
+ * Radares que sairiam sem nenhuma noticia com as decisoes atuais.
+ *
+ * Conta apenas o que de fato vai para o e-mail: item pendente ou rejeitado
+ * nao alimenta Radar nenhum.
+ */
+export function radaresSemConteudo(itens: ItemRevisao[]): BoletimId[] {
+  const comConteudo = new Set<BoletimId>()
+
+  for (const item of itens) {
+    if (item.status === "rejeitado" || item.status === "pendente") continue
+    for (const radar of item.boletinsFinais) comConteudo.add(radar)
+  }
+
+  return BOLETIM_IDS.filter((radar) => !comConteudo.has(radar))
+}
+
+/** Ordem em que os candidatos aparecem: primeiro o que ja passou no crivo. */
+const PESO_STATUS: Record<StatusRevisao, number> = {
+  aprovado: 0,
+  ajustado: 0,
+  pendente: 1,
+  rejeitado: 2,
+}
+
+/**
+ * Itens coletados que ainda nao estao em um Radar e poderiam entrar nele.
+ *
+ * Sao os candidatos oferecidos quando um Radar ficaria vazio: tudo o que foi
+ * coletado nesta edicao e nao foi classificado para esse Radar. A ordem poe
+ * na frente o que ja foi aprovado para outro Radar, depois o que ninguem
+ * olhou, e por ultimo o que foi rejeitado — sem esconder nenhum dos tres,
+ * porque a escolha e de quem revisa.
+ */
+export function candidatosParaRadar(
+  itens: ItemRevisao[],
+  radar: BoletimId
+): ItemRevisao[] {
+  return itens
+    .filter((item) => !item.boletinsFinais.includes(radar))
+    .sort((a, b) => PESO_STATUS[a.status] - PESO_STATUS[b.status])
 }
 
 /**
@@ -98,12 +143,16 @@ export function montarDecisao(item: ItemRevisao): DecisaoExportada {
 /**
  * Monta o payload completo enviado para POST /api/revisao.
  *
- * Lanca erro se ainda houver item pendente: a revisao so pode ser concluida
- * depois que cada item recebeu uma decisao explicita.
+ * Lanca erro em dois casos, os dois por falta de decisao humana:
+ * - ainda ha item pendente: cada item precisa de uma decisao explicita;
+ * - um Radar sairia sem nenhuma noticia e ninguem disse o que fazer com ele.
+ *   Para liberar, quem revisa inclui alguma publicacao nesse Radar ou marca
+ *   que ele pode sair vazio mesmo assim — e essa marcacao viaja no payload.
  */
 export function montarPayloadRevisao(
   itens: ItemRevisao[],
-  dataExecucao: string
+  dataExecucao: string,
+  radaresVaziosConfirmados: BoletimId[] = []
 ): RevisaoPayload {
   const pendentes = itensPendentes(itens)
 
@@ -111,6 +160,17 @@ export function montarPayloadRevisao(
     throw new Error(
       `A revisao tem ${pendentes.length} item(ns) pendente(s). ` +
         "Revise todos antes de confirmar."
+    )
+  }
+
+  const confirmados = new Set(radaresVaziosConfirmados)
+  const vazios = radaresSemConteudo(itens)
+  const semDecisao = vazios.filter((radar) => !confirmados.has(radar))
+
+  if (semDecisao.length > 0) {
+    throw new Error(
+      `${semDecisao.length} Radar(es) sairiam sem nenhuma publicacao. ` +
+        "Inclua alguma ou confirme o envio vazio antes de concluir."
     )
   }
 
@@ -127,6 +187,9 @@ export function montarPayloadRevisao(
     total_aprovados: aprovados,
     total_rejeitados: decisoes.length - aprovados,
     decisoes,
+    // So os que de fato ficaram vazios: marcar um Radar e depois completa-lo
+    // nao deve registrar uma ciencia que nao vale mais.
+    radares_sem_conteudo_confirmados: vazios,
   }
 }
 
@@ -155,6 +218,8 @@ interface ProgressoSalvo {
   data_execucao: string
   atualizado_em: string
   itens: Record<string, ProgressoItem>
+  /** Radares que quem revisa aceitou enviar sem nenhuma publicacao. */
+  radares_vazios_confirmados?: string[]
 }
 
 interface ManuaisSalvos {
@@ -196,7 +261,11 @@ export function carregarProgresso(dataExecucao: string): Record<string, Progress
   return salvo.itens
 }
 
-export function salvarProgresso(dataExecucao: string, itens: ItemRevisao[]): void {
+export function salvarProgresso(
+  dataExecucao: string,
+  itens: ItemRevisao[],
+  radaresVaziosConfirmados: BoletimId[] = []
+): void {
   const mapa: Record<string, ProgressoItem> = {}
   for (const item of itens) {
     mapa[item.noticia.id] = {
@@ -209,8 +278,24 @@ export function salvarProgresso(dataExecucao: string, itens: ItemRevisao[]): voi
     data_execucao: dataExecucao,
     atualizado_em: new Date().toISOString(),
     itens: mapa,
+    radares_vazios_confirmados: radaresVaziosConfirmados,
   }
   gravarJson(CHAVE_PROGRESSO, payload)
+}
+
+/** Radares que ja receberam a ciencia de sair vazios, nesta mesma edicao. */
+export function carregarRadaresVaziosConfirmados(
+  dataExecucao: string
+): BoletimId[] {
+  const salvo = lerJson<ProgressoSalvo>(CHAVE_PROGRESSO)
+  if (!salvo || salvo.data_execucao !== dataExecucao) return []
+
+  const lista = salvo.radares_vazios_confirmados
+  if (!Array.isArray(lista)) return []
+
+  return lista.filter((radar): radar is BoletimId =>
+    (BOLETIM_IDS as string[]).includes(radar)
+  )
 }
 
 export function limparProgresso(): void {
