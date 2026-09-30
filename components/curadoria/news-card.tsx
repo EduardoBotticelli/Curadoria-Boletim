@@ -54,6 +54,8 @@ export function NewsCard({
   onSalvarAjustes,
 }: NewsCardProps) {
   const { noticia, status, boletinsFinais } = item
+  const sugestao = noticia.sugestao_sem_ia
+  const sugestaoPendente = Boolean(sugestao) && status === "pendente"
   const cardRef = useRef<HTMLElement>(null)
   const [corpoAberto, setCorpoAberto] = useState(true)
   const [rejeicoesAbertas, setRejeicoesAbertas] = useState(false)
@@ -130,6 +132,17 @@ export function NewsCard({
                 Adicionado manualmente
               </Badge>
             )}
+            {sugestao ? (
+              <Badge className="border border-violet-400/50 bg-violet-100 text-xs text-violet-800 hover:bg-violet-100">
+                Sugestão sem IA
+              </Badge>
+            ) : (
+              noticia.nao_classificada_ia && (
+                <Badge className="border border-violet-400/50 bg-violet-50 text-xs text-violet-800 hover:bg-violet-50">
+                  Não classificada pela IA
+                </Badge>
+              )
+            )}
             <Badge variant="secondary" className="text-xs">
               {formatarData(noticia.data_publicacao)}
             </Badge>
@@ -173,7 +186,7 @@ export function NewsCard({
           <div className="flex flex-col gap-3 p-4 pt-3">
             <p className="text-sm leading-relaxed text-foreground/90">{noticia.resumo}</p>
             <p className="text-xs text-muted-foreground italic">
-              Motivo da IA: {noticia.motivo_filtragem}
+              {noticia.nao_classificada_ia ? "Motivo:" : "Motivo da IA:"} {noticia.motivo_filtragem}
             </p>
 
             {noticia.palavras_chave_detectadas.length > 0 && (
@@ -192,7 +205,11 @@ export function NewsCard({
 
             <div className="flex flex-col gap-1.5">
               <span className="text-xs font-medium text-muted-foreground">
-                {status === "ajustado" ? "Incluido em:" : "IA sugeriu incluir em:"}
+                {status === "ajustado"
+                  ? "Incluido em:"
+                  : sugestaoPendente
+                    ? "Sugestão sem IA (só entra no boletim depois de confirmada):"
+                    : "IA sugeriu incluir em:"}
               </span>
               {boletinsFinais.length > 0 ? (
                 <div className="flex flex-wrap gap-1">
@@ -200,7 +217,11 @@ export function NewsCard({
                     <Badge
                       key={id}
                       variant="outline"
-                      className="border-success/40 bg-success/10 text-xs text-success"
+                      className={
+                        sugestaoPendente
+                          ? "border-dashed border-violet-400/60 bg-violet-50 text-xs text-violet-800"
+                          : "border-success/40 bg-success/10 text-xs text-success"
+                      }
                     >
                       {BOLETINS[id]}
                     </Badge>
@@ -284,7 +305,7 @@ export function NewsCard({
               }}
             >
               <PlusCircleIcon data-icon="inline-start" />
-              Incluir no boletim
+              {sugestao ? "Confirmar ou trocar o Radar" : "Incluir no boletim"}
             </Button>
           )}
 

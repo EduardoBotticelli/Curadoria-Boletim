@@ -41,6 +41,19 @@ export interface FonteEmDefeso {
   reativar_em: string
 }
 
+/**
+ * Radar sugerido pelo pipeline sem IA, para publicacao que o modelo nao
+ * devolveu (ver sugestao_sem_ia.py no boletim-automacao). Nunca vem
+ * aprovada: o item chega pendente, com o Radar ja marcado, e so vale se a
+ * pessoa confirmar.
+ */
+export interface SugestaoSemIa {
+  radares: BoletimId[]
+  /** "matriz", "palavras_chave" ou "perfil_da_fonte". */
+  metodo: string
+  evidencia: string
+}
+
 export interface Noticia {
   /**
    * Identificador estavel do item.
@@ -59,6 +72,9 @@ export interface Noticia {
   boletins_rejeitados: BoletimRejeitado[]
   url: string
   origem: OrigemNoticia
+  /** A IA nao devolveu esta publicacao; ela veio da coleta. */
+  nao_classificada_ia?: boolean
+  sugestao_sem_ia?: SugestaoSemIa
 }
 
 export interface ItemRevisao {

@@ -51,14 +51,18 @@ interface DashboardProps {
  * Cria itens de revisao a partir das noticias.
  * - Se a noticia foi classificada em algum boletim: status = "aprovado" (ja vai pro boletim final)
  * - Se a noticia eh orfã (nenhum boletim): status = "pendente" (Alice pode resgatar se quiser)
+ * - Se a IA nao a classificou e o pipeline sugeriu um Radar sem IA: continua
+ *   "pendente", mas com o Radar sugerido ja marcado. Nao entra no boletim
+ *   ate a pessoa confirmar.
  */
 function criarItensDeNoticias(noticias: Noticia[]): ItemRevisao[] {
   return noticias.map((noticia) => {
     const temBoletim = noticia.boletins_confirmados_ia.length > 0
+    const sugeridos = noticia.sugestao_sem_ia?.radares ?? []
     return {
       noticia,
       status: (temBoletim ? "aprovado" : "pendente") as StatusRevisao,
-      boletinsFinais: [...noticia.boletins_confirmados_ia],
+      boletinsFinais: temBoletim ? [...noticia.boletins_confirmados_ia] : [...sugeridos],
     }
   })
 }
@@ -192,7 +196,11 @@ export function Dashboard({
       atual.map((item) => {
         if (item.noticia.id !== id) return item
         if (item.noticia.boletins_confirmados_ia.length === 0) {
-          toast.info("Item sem sugestao da IA. Escolha manualmente em quais boletins incluir.")
+          toast.info(
+            item.noticia.sugestao_sem_ia
+              ? "Sugestao sem IA: confira o Radar marcado e salve, ou troque."
+              : "Item sem sugestao da IA. Escolha manualmente em quais boletins incluir."
+          )
           return item
         }
         return {
