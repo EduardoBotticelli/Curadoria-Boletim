@@ -18,12 +18,15 @@ import { NewsCard } from "./news-card"
 import { ConfirmDialog } from "./confirm-dialog"
 import { ShortcutsDialog } from "./shortcuts-dialog"
 import { AddItemDialog } from "./add-item-dialog"
-import { BOLETIM_IDS } from "@/lib/boletins"
+import { RadaresVaziosDialog } from "./radares-vazios-dialog"
+import { BOLETIM_IDS, BOLETINS } from "@/lib/boletins"
 import {
   carregarManuais,
   carregarProgresso,
+  carregarRadaresVaziosConfirmados,
   limparProgresso,
   montarPayloadRevisao,
+  radaresSemConteudo,
   salvarManuais,
   salvarProgresso,
 } from "@/lib/revisao"
@@ -75,6 +78,8 @@ export function Dashboard({
   const [focadoId, setFocadoId] = useState<string | null>(null)
   const [ajusteAbertoId, setAjusteAbertoId] = useState<string | null>(null)
   const [confirmAberto, setConfirmAberto] = useState(false)
+  const [radaresVaziosAberto, setRadaresVaziosAberto] = useState(false)
+  const [radaresVaziosConfirmados, setRadaresVaziosConfirmados] = useState<BoletimId[]>([])
   const [ajudaAberta, setAjudaAberta] = useState(false)
   const [enviando, setEnviando] = useState(false)
   const [finalizado, setFinalizado] = useState(false)
@@ -86,6 +91,8 @@ export function Dashboard({
 
     const manuais = carregarManuais(dataExecucao)
     const progresso = carregarProgresso(dataExecucao)
+
+    setRadaresVaziosConfirmados(carregarRadaresVaziosConfirmados(dataExecucao))
 
     setItens((atual) => {
       const idsExistentes = new Set(atual.map((item) => item.noticia.id))
@@ -117,8 +124,8 @@ export function Dashboard({
   // nao descarte a revisao inteira.
   useEffect(() => {
     if (!mounted || finalizado) return
-    salvarProgresso(dataExecucao, itens)
-  }, [mounted, finalizado, dataExecucao, itens])
+    salvarProgresso(dataExecucao, itens, radaresVaziosConfirmados)
+  }, [mounted, finalizado, dataExecucao, itens, radaresVaziosConfirmados])
 
   // As fontes suspensas chegam do backend como objetos { fonte, motivo,
   // reativar_em }. Antes eram strings, e o portal ainda chamava .split() nelas,
@@ -289,6 +296,70 @@ export function Dashboard({
       ? "1 item ainda precisa ser revisado"
       : `${stats.pendentes} itens ainda precisam ser revisados`
 
+  // Radares que sairiam sem nenhuma publicacao com as decisoes de agora.
+  const radaresVazios = useMemo(() => radaresSemConteudo(itens), [itens])
+
+  // A ciencia vale para o Radar que esta vazio agora. Se ele receber uma
+  // publicacao depois, a marcacao antiga deixa de valer: se voltar a ficar
+  // vazio, a decisao precisa ser tomada de novo.
+  useEffect(() => {
+    setRadaresVaziosConfirmados((atual) => {
+      const vazios = new Set(radaresVazios)
+      const filtrado = atual.filter((radar) => vazios.has(radar))
+      return filtrado.length === atual.length ? atual : filtrado
+    })
+  }, [radaresVazios])
+
+  const radaresVaziosPendentes = useMemo(() => {
+    const confirmados = new Set(radaresVaziosConfirmados)
+    return radaresVazios.filter((radar) => !confirmados.has(radar))
+  }, [radaresVazios, radaresVaziosConfirmados])
+
+  /**
+   * Radar vazio tambem bloqueia. Em vez de sair so com a mensagem padrao,
+   * quem revisa decide: inclui alguma publicacao coletada hoje ou marca que
+   * o Radar pode sair vazio mesmo assim. O gerador nao inclui nada sozinho.
+   */
+  const bloqueadoPorRadarVazio = radaresVaziosPendentes.length > 0
+  const bloqueado = bloqueadoPorPendencias || bloqueadoPorRadarVazio
+
+  const textoRadaresVazios =
+    radaresVaziosPendentes.length === 1
+      ? "1 Radar sairia sem publicacoes"
+      : `${radaresVaziosPendentes.length} Radares sairiam sem publicacoes`
+
+  const textoBloqueio = bloqueadoPorPendencias
+    ? textoPendencias
+    : textoRadaresVazios
+
+  /** Acrescenta um item a um Radar que estava vazio. */
+  const incluirNoRadar = useCallback((id: string, radar: BoletimId) => {
+    setItens((atual) =>
+      atual.map((item) => {
+        if (item.noticia.id !== id) return item
+        if (item.boletinsFinais.includes(radar)) return item
+        return {
+          ...item,
+          status: "ajustado",
+          boletinsFinais: [...item.boletinsFinais, radar],
+        }
+      })
+    )
+    toast.success(`Item incluido em ${BOLETINS[radar]}`)
+  }, [])
+
+  const alternarConfirmacaoRadarVazio = useCallback(
+    (radar: BoletimId, confirmado: boolean) => {
+      setRadaresVaziosConfirmados((atual) => {
+        if (confirmado) {
+          return atual.includes(radar) ? atual : [...atual, radar]
+        }
+        return atual.filter((outro) => outro !== radar)
+      })
+    },
+    []
+  )
+
   const confirmarRevisao = useCallback(async () => {
     if (itens.length === 0) {
       toast.error("Nao ha itens para revisar.")
@@ -309,12 +380,25 @@ export function Dashboard({
       return
     }
 
+    // Mesma rede de seguranca para os Radares vazios: o botao ja fica
+    // desabilitado e o montarPayloadRevisao tambem recusa.
+    if (radaresVaziosPendentes.length > 0) {
+      toast.error(
+        `${textoRadaresVazios}. Inclua alguma publicacao ou confirme o envio vazio.`
+      )
+      setConfirmAberto(false)
+      setRadaresVaziosAberto(true)
+      return
+    }
+
     setEnviando(true)
     try {
       const resposta = await fetch("/api/revisao", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(montarPayloadRevisao(itens, dataExecucao)),
+        body: JSON.stringify(
+          montarPayloadRevisao(itens, dataExecucao, radaresVaziosConfirmados)
+        ),
       })
 
       if (!resposta.ok) {
@@ -336,7 +420,13 @@ export function Dashboard({
     } finally {
       setEnviando(false)
     }
-  }, [itens, dataExecucao])
+  }, [
+    itens,
+    dataExecucao,
+    radaresVaziosConfirmados,
+    radaresVaziosPendentes,
+    textoRadaresVazios,
+  ])
 
   useEffect(() => {
     if (!mounted) return
@@ -350,6 +440,13 @@ export function Dashboard({
         if (finalizado) return
         if (bloqueadoPorPendencias) {
           toast.error(`${textoPendencias}. Revise todos antes de confirmar.`)
+          return
+        }
+        if (bloqueadoPorRadarVazio) {
+          toast.error(
+            `${textoRadaresVazios}. Inclua alguma publicacao ou confirme o envio vazio.`
+          )
+          setRadaresVaziosAberto(true)
           return
         }
         setConfirmAberto(true)
@@ -401,6 +498,8 @@ export function Dashboard({
     finalizado,
     bloqueadoPorPendencias,
     textoPendencias,
+    bloqueadoPorRadarVazio,
+    textoRadaresVazios,
     aprovar,
     rejeitar,
   ])
@@ -453,6 +552,33 @@ export function Dashboard({
               {fontesEmDefeso.map((fonte) => fonte.fonte).join(", ")}.{" "}
               {resumoDefeso}
             </div>
+          </div>
+        )}
+
+        {radaresVazios.length > 0 && !finalizado && (
+          <div className="flex flex-wrap items-start gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4">
+            <TriangleAlertIcon
+              className="mt-0.5 size-5 shrink-0 text-warning"
+              aria-hidden="true"
+            />
+            <div className="min-w-0 flex-1 text-sm text-foreground/90">
+              <span className="font-semibold">
+                {radaresVazios.length === 1
+                  ? "1 Radar sairia sem nenhuma publicacao:"
+                  : `${radaresVazios.length} Radares sairiam sem nenhuma publicacao:`}
+              </span>{" "}
+              {radaresVazios.map((radar) => BOLETINS[radar]).join(", ")}.{" "}
+              {bloqueadoPorRadarVazio
+                ? "Inclua alguma publicacao coletada hoje ou confirme o envio vazio."
+                : "Envio vazio ja confirmado."}
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setRadaresVaziosAberto(true)}
+            >
+              {bloqueadoPorRadarVazio ? "Completar" : "Rever"}
+            </Button>
           </div>
         )}
 
@@ -511,34 +637,39 @@ export function Dashboard({
       </div>
 
       <div className="fixed right-4 bottom-4 z-40 flex flex-col items-end gap-2 md:right-8 md:bottom-8">
-        {bloqueadoPorPendencias && !finalizado && (
+        {bloqueado && !finalizado && (
           <p
             id="aviso-pendencias"
             role="status"
             className="max-w-xs rounded-lg border border-warning/40 bg-background/95 px-3 py-2 text-right text-xs text-foreground/80 shadow-lg backdrop-blur"
           >
-            {textoPendencias}. Use o filtro &ldquo;Pendentes&rdquo; para
-            encontr&aacute;-{stats.pendentes === 1 ? "lo" : "los"}.
+            {bloqueadoPorPendencias ? (
+              <>
+                {textoPendencias}. Use o filtro &ldquo;Pendentes&rdquo; para
+                encontr&aacute;-{stats.pendentes === 1 ? "lo" : "los"}.
+              </>
+            ) : (
+              <>
+                {textoRadaresVazios}. Inclua alguma publica&ccedil;&atilde;o ou
+                confirme o envio vazio.
+              </>
+            )}
           </p>
         )}
 
         <Button
           size="lg"
           className="h-12 px-6 text-base shadow-lg"
-          disabled={finalizado || bloqueadoPorPendencias}
-          aria-describedby={
-            bloqueadoPorPendencias && !finalizado ? "aviso-pendencias" : undefined
+          disabled={finalizado || bloqueado}
+          aria-describedby={bloqueado && !finalizado ? "aviso-pendencias" : undefined}
+          onClick={() =>
+            bloqueadoPorRadarVazio
+              ? setRadaresVaziosAberto(true)
+              : setConfirmAberto(true)
           }
-          onClick={() => setConfirmAberto(true)}
         >
-          {finalizado
-            ? "Revisao confirmada"
-            : bloqueadoPorPendencias
-              ? textoPendencias
-              : "Confirmar revisao"}
-          {!finalizado && !bloqueadoPorPendencias && (
-            <ArrowRightIcon data-icon="inline-end" />
-          )}
+          {finalizado ? "Revisao confirmada" : bloqueado ? textoBloqueio : "Confirmar revisao"}
+          {!finalizado && !bloqueado && <ArrowRightIcon data-icon="inline-end" />}
         </Button>
       </div>
 
@@ -549,8 +680,19 @@ export function Dashboard({
         rejeitados={resumoConfirmacao.rejeitados}
         ajustados={resumoConfirmacao.ajustados}
         boletinsGerados={resumoConfirmacao.boletinsGerados}
+        radaresVazios={radaresVazios}
         enviando={enviando}
         onConfirmar={confirmarRevisao}
+      />
+
+      <RadaresVaziosDialog
+        aberto={radaresVaziosAberto}
+        onAbertoChange={setRadaresVaziosAberto}
+        radaresVazios={radaresVazios}
+        itens={itens}
+        confirmados={radaresVaziosConfirmados}
+        onIncluir={incluirNoRadar}
+        onAlternarConfirmacao={alternarConfirmacaoRadarVazio}
       />
 
       <ShortcutsDialog aberto={ajudaAberta} onAbertoChange={setAjudaAberta} />

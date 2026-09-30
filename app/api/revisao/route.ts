@@ -42,6 +42,7 @@ interface CorpoRecebido {
   confirmadoEm?: string
   data_execucao?: string
   decisoes?: DecisaoCanonica[]
+  radares_sem_conteudo_confirmados?: string[]
   itens?: DecisaoLegada[]
 }
 
@@ -55,6 +56,12 @@ interface PayloadDecisoes {
   total_aprovados: number
   total_rejeitados: number
   decisoes: DecisaoCanonica[]
+  /**
+   * Radares que a pessoa que revisa aceitou enviar sem nenhuma publicacao.
+   * O portal so libera a confirmacao depois dessa decisao explicita; aqui o
+   * campo e apenas repassado, para o registro ficar no decisoes_alice.json.
+   */
+  radares_sem_conteudo_confirmados: string[]
 }
 
 const STATUS_CANONICOS = new Set(["aprovado", "rejeitado"])
@@ -111,6 +118,11 @@ function normalizarCorpo(corpo: CorpoRecebido): PayloadDecisoes | { erro: string
       total_aprovados: aprovados,
       total_rejeitados: decisoes.length - aprovados,
       decisoes,
+      radares_sem_conteudo_confirmados: Array.isArray(
+        corpo.radares_sem_conteudo_confirmados
+      )
+        ? corpo.radares_sem_conteudo_confirmados.map(String)
+        : [],
     }
   }
 

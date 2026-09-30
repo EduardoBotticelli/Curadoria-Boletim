@@ -23,6 +23,8 @@ interface ConfirmDialogProps {
   rejeitados: number
   ajustados: number
   boletinsGerados: { boletim: BoletimId; quantidade: number }[]
+  /** Radares que vao sair so com a mensagem padrao, por decisao de quem revisa. */
+  radaresVazios: BoletimId[]
   enviando: boolean
   onConfirmar: () => void
 }
@@ -34,6 +36,7 @@ export function ConfirmDialog({
   rejeitados,
   ajustados,
   boletinsGerados,
+  radaresVazios,
   enviando,
   onConfirmar,
 }: ConfirmDialogProps) {
@@ -50,7 +53,9 @@ export function ConfirmDialog({
             <strong>{incluidos}</strong> {incluidos === 1 ? "item ser\u00e1 inclu\u00eddo" : "itens ser\u00e3o inclu\u00eddos"} nos boletins finais
           </li>
           <li>
-            <strong>{rejeitados}</strong> {rejeitados === 1 ? "item foi rejeitado" : "itens foram rejeitados"} por voc&ecirc;
+            <strong>{rejeitados}</strong>{" "}
+            {rejeitados === 1 ? "item foi rejeitado" : "itens foram rejeitados"}{" "}
+            por voc&ecirc;
           </li>
           <li>
             <strong>{ajustados}</strong> {ajustados === 1 ? "item teve os boletins ajustados" : "itens tiveram os boletins ajustados"} manualmente
@@ -75,6 +80,29 @@ export function ConfirmDialog({
             <span className="text-sm text-muted-foreground">Nenhum boletim ser&aacute; gerado.</span>
           )}
         </div>
+
+        {radaresVazios.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium">
+              Radares que sair&atilde;o sem publica&ccedil;&otilde;es:
+            </span>
+            <div className="flex flex-wrap gap-1">
+              {radaresVazios.map((boletim) => (
+                <Badge
+                  key={boletim}
+                  variant="outline"
+                  className="border-warning/40 bg-warning/10 text-warning"
+                >
+                  {BOLETINS[boletim]}
+                </Badge>
+              ))}
+            </div>
+            <span className="text-xs text-muted-foreground">
+              Cada um sai com a mensagem padr&atilde;o de que n&atilde;o houve
+              atualiza&ccedil;&otilde;es no per&iacute;odo.
+            </span>
+          </div>
+        )}
 
         <Alert className="border-warning/40 bg-warning/10 text-foreground">
           <TriangleAlertIcon className="text-warning" />

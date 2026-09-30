@@ -133,6 +133,14 @@ export interface RevisaoPayload {
   total_aprovados: number
   total_rejeitados: number
   decisoes: DecisaoExportada[]
+  /**
+   * Radares que vao sair sem nenhuma noticia, com ciencia explicita de quem
+   * revisou. O portal so libera a confirmacao depois que cada Radar vazio foi
+   * completado ou marcado aqui, entao a lista registra uma decisao humana, nao
+   * um efeito colateral da curadoria. O gerar_boletim_final.py apenas anota no
+   * resumo da geracao: quem decide o conteudo do Radar e o portal.
+   */
+  radares_sem_conteudo_confirmados: BoletimId[]
 }
 
 export interface JanelaAplicada {
