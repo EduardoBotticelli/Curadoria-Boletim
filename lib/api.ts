@@ -1,5 +1,5 @@
 import { idEstavel } from "./ids"
-import type { BoletimId, BoletimMetadata, FonteEmDefeso, Noticia, SugestaoSemIa } from "./types"
+import type { BoletimId, BoletimMetadata, FonteEmDefeso, Noticia } from "./types"
 
 /**
  * Origem do boletim.json.
@@ -12,30 +12,22 @@ const BOLETIM_URL =
   process.env.BOLETIM_URL ||
   "https://raw.githubusercontent.com/EduardoBotticelli/boletim-automacao/refs/heads/main/output/boletim.json"
 
-interface BackendBoletimRejeitado {
-  boletim: string
-  motivo: string
-}
-
+/**
+ * Um item do boletim.json. So os campos que o portal usa: o resto (motivos,
+ * palavras-chave, detalhes da classificacao) e registro tecnico do pipeline e
+ * fica no log e na auditoria, fora da tela de quem revisa.
+ */
 interface BackendItem {
   fonte?: string
   categoria?: string
   titulo?: string
   data_publicacao?: string
   resumo?: string
-  motivo_filtragem?: string
-  palavras_chave_detectadas?: string[]
-  boletins_confirmados?: string[]
-  boletins_rejeitados?: BackendBoletimRejeitado[]
+  /** Radares definidos pelo pipeline, ja com o Filtro 1 aplicado. */
   boletins?: string[]
+  /** Formato antigo, anterior ao campo "boletins". */
+  boletins_confirmados?: string[]
   url?: string
-  nao_classificada_pela_ia?: boolean
-  sugestao_sem_ia?: {
-    radares?: string[]
-    metodo?: string | null
-    evidencia?: string
-    motivo_sem_radar?: string
-  }
 }
 
 interface BackendJson {
@@ -113,21 +105,20 @@ function normalizarFontesEmDefeso(valor: unknown): FonteEmDefeso[] {
 /**
  * Converte um item do boletim.json em Noticia.
  *
+ * O Radar do item e o "boletins" que o pipeline gravou, mesmo vazio. Ele ja
+ * vem com o Filtro 1 aplicado: quando o pipeline tira um Radar que a fonte
+ * nao pode alimentar, "boletins" fica vazio e o item chega sem Radar. O
+ * "boletins_confirmados" so e lido em boletim.json antigo, sem "boletins";
+ * usa-lo como reserva fazia o item aparecer aprovado justamente no Radar que
+ * o Filtro 1 tinha barrado.
+ *
  * O conjunto "idsUsados" garante ids unicos mesmo no caso improvavel de duas
  * publicacoes diferentes produzirem a mesma chave canonica.
  */
 function converterItem(item: BackendItem, idsUsados: Set<string>): Noticia {
-  const boletinsBrutos =
-    item.boletins && item.boletins.length > 0 ? item.boletins : item.boletins_confirmados || []
-
-  const boletinsFinais = filtrarBoletinsValidos(boletinsBrutos)
-
-  const boletinsRejeitados = (item.boletins_rejeitados || [])
-    .filter((rej) => rej && typeof rej.boletim === "string" && ehBoletimValido(rej.boletim))
-    .map((rej) => ({
-      boletim: rej.boletim as BoletimId,
-      motivo: rej.motivo || "",
-    }))
+  const radares = filtrarBoletinsValidos(
+    Array.isArray(item.boletins) ? item.boletins : item.boletins_confirmados
+  )
 
   const fonte = item.fonte || "Fonte desconhecida"
   const titulo = item.titulo || "(sem titulo)"
@@ -144,36 +135,13 @@ function converterItem(item: BackendItem, idsUsados: Set<string>): Noticia {
   return {
     id,
     fonte,
-    categoria: item.categoria || "Sem categoria",
+    categoria: item.categoria || "",
     titulo,
     data_publicacao: item.data_publicacao || "",
     resumo: item.resumo || "",
-    motivo_filtragem: item.motivo_filtragem || "",
-    palavras_chave_detectadas: Array.isArray(item.palavras_chave_detectadas)
-      ? item.palavras_chave_detectadas
-      : [],
-    boletins_confirmados_ia: boletinsFinais,
-    boletins_rejeitados: boletinsRejeitados,
+    radares_definidos: radares,
     url,
     origem: "scraper",
-    nao_classificada_ia: item.nao_classificada_pela_ia === true,
-    sugestao_sem_ia: converterSugestao(item, boletinsFinais),
-  }
-}
-
-/**
- * A sugestao sem IA so vale para item que a IA nao classificou e quando traz
- * ao menos um Radar valido. Se a IA classificou, a sugestao e ignorada.
- */
-function converterSugestao(item: BackendItem, boletinsIa: BoletimId[]): SugestaoSemIa | undefined {
-  const bruta = item.sugestao_sem_ia
-  if (!bruta || boletinsIa.length > 0) return undefined
-  const radares = filtrarBoletinsValidos(Array.isArray(bruta.radares) ? bruta.radares : [])
-  if (radares.length === 0) return undefined
-  return {
-    radares,
-    metodo: typeof bruta.metodo === "string" ? bruta.metodo : "",
-    evidencia: typeof bruta.evidencia === "string" ? bruta.evidencia : "",
   }
 }
 

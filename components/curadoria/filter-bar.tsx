@@ -14,7 +14,7 @@ import { BOLETIM_IDS, BOLETINS } from "@/lib/boletins"
 import type { BoletimId } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
-export type StatusFiltro = "todos" | "pendente" | "aprovado" | "rejeitado"
+export type StatusFiltro = "todas" | "alteradas" | "retiradas"
 
 interface FilterBarProps {
   statusFiltro: StatusFiltro
@@ -40,23 +40,22 @@ export function FilterBar({
           onValueChange={(value) => onStatusChange(value as StatusFiltro)}
         >
           <TabsList>
-            <TabsTrigger value="todos">Todos</TabsTrigger>
-            <TabsTrigger value="pendente">Pendentes</TabsTrigger>
-            <TabsTrigger value="aprovado">Aprovados</TabsTrigger>
-            <TabsTrigger value="rejeitado">Rejeitados</TabsTrigger>
+            <TabsTrigger value="todas">Todas</TabsTrigger>
+            <TabsTrigger value="alteradas">Com Radar alterado</TabsTrigger>
+            <TabsTrigger value="retiradas">Retiradas</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
 
-      {/* Chips de boletim (desktop/tablet) */}
-      <div className="hidden flex-wrap gap-1.5 md:flex" role="group" aria-label="Filtrar por boletim">
+      {/* Radares (desktop/tablet) */}
+      <div className="hidden flex-wrap gap-1.5 md:flex" role="group" aria-label="Filtrar por Radar">
         <Button
           variant={boletimFiltro === "todos" ? "secondary" : "ghost"}
           size="xs"
           className={cn(boletimFiltro === "todos" && "border-border")}
           onClick={() => onBoletimChange("todos")}
         >
-          Todos os boletins
+          Todos os Radares
         </Button>
         {BOLETIM_IDS.map((id) => (
           <Button
@@ -72,18 +71,18 @@ export function FilterBar({
         ))}
       </div>
 
-      {/* Dropdown de boletim (mobile) */}
+      {/* Radares (celular) */}
       <div className="md:hidden">
         <Select
           value={boletimFiltro}
           onValueChange={(value) => onBoletimChange(value as BoletimId | "todos")}
         >
-          <SelectTrigger className="w-full" aria-label="Filtrar por boletim">
+          <SelectTrigger className="w-full" aria-label="Filtrar por Radar">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
-              <SelectItem value="todos">Todos os boletins</SelectItem>
+              <SelectItem value="todos">Todos os Radares</SelectItem>
               {BOLETIM_IDS.map((id) => (
                 <SelectItem key={id} value={id}>
                   {BOLETINS[id]} ({contagemBoletins[id]})

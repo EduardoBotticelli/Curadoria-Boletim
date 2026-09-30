@@ -3,21 +3,21 @@ import { cn } from "@/lib/utils"
 import type { StatusRevisao } from "@/lib/types"
 
 const STATUS_CONFIG: Record<StatusRevisao, { label: string; className: string }> = {
-  pendente: {
-    label: "Pendente",
-    className: "border-warning/40 bg-warning/10 text-warning",
-  },
   aprovado: {
-    label: "Aprovado",
+    label: "No e-mail",
     className: "border-success/40 bg-success/10 text-success",
   },
+  ajustado: {
+    label: "Radar alterado",
+    className: "border-info/40 bg-info/10 text-info",
+  },
   rejeitado: {
-    label: "Rejeitado",
+    label: "Retirada",
     className: "border-border bg-muted text-muted-foreground",
   },
-  ajustado: {
-    label: "Ajustado",
-    className: "border-info/40 bg-info/10 text-info",
+  sem_radar: {
+    label: "Sem Radar",
+    className: "border-warning/40 bg-warning/10 text-warning",
   },
 }
 

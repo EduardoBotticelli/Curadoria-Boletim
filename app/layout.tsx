@@ -4,9 +4,9 @@ import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Curadoria do Boletim | Lobo de Rizzo Advogados',
+  title: 'Curadoria dos Radares | Lobo de Rizzo Advogados',
   description:
-    'Painel interno de curadoria da pré-filtragem de notícias jurídicas antes da geração dos boletins temáticos.',
+    'Painel interno de revisão das notícias dos Radares antes do envio.',
   generator: 'v0.app',
   icons: {
     icon: [

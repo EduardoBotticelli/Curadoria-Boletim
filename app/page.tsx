@@ -28,7 +28,7 @@ function formatarDataExtenso(iso: string): string {
 }
 
 function formatarJanela(inicio: string, fim: string): string {
-  if (!inicio && !fim) return "Janela nao disponivel"
+  if (!inicio && !fim) return ""
 
   function formatar(iso: string): string {
     if (!iso) return "-"
@@ -43,7 +43,7 @@ function formatarJanela(inicio: string, fim: string): string {
     return dataFormatada
   }
 
-  return `Janela: ${formatar(inicio)} ate ${formatar(fim)}`
+  return `Publicações de ${formatar(inicio)} a ${formatar(fim)}`
 }
 
 export default async function Page() {

@@ -32,7 +32,8 @@ export function PageHeader({
           </p>
 
           <p className="text-xs text-white/70 md:text-sm">
-            {dataExtenso} &middot; {janelaTemporal}
+            {dataExtenso}
+            {janelaTemporal && <> &middot; {janelaTemporal}</>}
           </p>
         </div>
 

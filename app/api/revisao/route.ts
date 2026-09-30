@@ -246,7 +246,7 @@ export async function POST(request: Request) {
   if (!GITHUB_TOKEN) {
     console.error("[api/revisao] GITHUB_TOKEN nao configurado no Vercel")
     return NextResponse.json(
-      { erro: "Servidor nao configurado. Contate o administrador." },
+      { erro: "O envio não está disponível agora. Avise o responsável pelo sistema." },
       { status: 500 }
     )
   }
@@ -256,12 +256,24 @@ export async function POST(request: Request) {
   try {
     corpo = (await request.json()) as CorpoRecebido
   } catch {
-    return NextResponse.json({ erro: "Payload invalido (JSON malformado)" }, { status: 400 })
+    return NextResponse.json(
+      { erro: "Não foi possível ler a revisão. Recarregue a página e tente de novo." },
+      { status: 400 }
+    )
   }
 
   const normalizado = normalizarCorpo(corpo || {})
   if ("erro" in normalizado) {
-    return NextResponse.json({ erro: normalizado.erro }, { status: 400 })
+    // O detalhe e tecnico: fica no log do servidor e na resposta, mas a
+    // mensagem que o portal mostra e simples.
+    console.error("[api/revisao] Revisao recusada:", normalizado.erro)
+    return NextResponse.json(
+      {
+        erro: "A revisão não pôde ser enviada. Recarregue a página e tente de novo.",
+        detalhe: normalizado.erro,
+      },
+      { status: 400 }
+    )
   }
 
   // 1. Commita decisoes no repo do backend
@@ -271,7 +283,7 @@ export async function POST(request: Request) {
     console.error("[api/revisao] Erro ao commitar decisoes:", erro)
     return NextResponse.json(
       {
-        erro: "Nao foi possivel salvar as decisoes.",
+        erro: "Não foi possível salvar a revisão. Tente de novo em alguns minutos.",
         detalhe: erro instanceof Error ? erro.message : String(erro),
       },
       { status: 502 }
@@ -285,7 +297,7 @@ export async function POST(request: Request) {
     console.error("[api/revisao] Erro ao disparar workflow:", erro)
     return NextResponse.json(
       {
-        erro: "Decisoes salvas, mas nao foi possivel disparar a geracao dos boletins.",
+        erro: "A revisão foi salva, mas o envio dos Radares não começou. Avise o responsável pelo sistema.",
         detalhe: erro instanceof Error ? erro.message : String(erro),
       },
       { status: 502 }
@@ -294,7 +306,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     sucesso: true,
-    mensagem: "Revisao confirmada. Boletins serao gerados em ate 2 minutos.",
+    mensagem: "Revisão confirmada. Os Radares vão ser gerados em até 2 minutos.",
     totalItens: normalizado.total_itens,
     totalAprovados: normalizado.total_aprovados,
     confirmadoEm: normalizado.confirmado_em,

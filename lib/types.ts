@@ -9,26 +9,35 @@ export type BoletimId =
   | "propriedade-intelectual"
   | "contencioso-civel"
 
-/** Status que a pessoa atribui ao item dentro do portal. */
-export type StatusRevisao =
-  | "pendente"
-  | "aprovado"
-  | "rejeitado"
-  | "ajustado"
+/**
+ * Situacao do item no portal.
+ *
+ * - "aprovado": chegou com Radar definido e vai para o e-mail como veio;
+ * - "ajustado": quem revisa mudou o Radar (ou deu um Radar a um item que nao
+ *   tinha);
+ * - "rejeitado": quem revisa retirou o item do e-mail;
+ * - "sem_radar": chegou sem Radar e ninguem atribuiu um. Nao entra no e-mail
+ *   e nao bloqueia a confirmacao; a decisao exportada registra o motivo.
+ */
+export type StatusRevisao = "aprovado" | "ajustado" | "rejeitado" | "sem_radar"
+
+/** O que aconteceu com o item na revisao, para o registro das decisoes. */
+export type AcaoRevisao =
+  | "mantida"
+  | "radar_alterado"
+  | "radar_atribuido"
+  | "retirada"
+  | "sem_radar"
+  | "adicionada"
 
 /**
  * Status canonico gravado no decisoes_alice.json.
  * O gerar_boletim_final.py so reconhece estes dois valores no campo "status";
- * "pendente" e "ajustado" sao detalhes do portal e viajam em "status_portal".
+ * "ajustado" e "sem_radar" sao detalhes do portal e viajam em "status_portal".
  */
 export type StatusFinal = "aprovado" | "rejeitado"
 
 export type OrigemNoticia = "scraper" | "manual"
-
-export interface BoletimRejeitado {
-  boletim: BoletimId
-  motivo: string
-}
 
 /**
  * Fonte suspensa pelo pipeline (defeso eleitoral e afins).
@@ -39,19 +48,6 @@ export interface FonteEmDefeso {
   fonte: string
   motivo: string
   reativar_em: string
-}
-
-/**
- * Radar sugerido pelo pipeline sem IA, para publicacao que o modelo nao
- * devolveu (ver sugestao_sem_ia.py no boletim-automacao). Nunca vem
- * aprovada: o item chega pendente, com o Radar ja marcado, e so vale se a
- * pessoa confirmar.
- */
-export interface SugestaoSemIa {
-  radares: BoletimId[]
-  /** "matriz", "palavras_chave" ou "perfil_da_fonte". */
-  metodo: string
-  evidencia: string
 }
 
 export interface Noticia {
@@ -66,15 +62,13 @@ export interface Noticia {
   titulo: string
   data_publicacao: string
   resumo: string
-  motivo_filtragem: string
-  palavras_chave_detectadas: string[]
-  boletins_confirmados_ia: BoletimId[]
-  boletins_rejeitados: BoletimRejeitado[]
+  /**
+   * Radares em que o item chegou do pipeline ("boletins" do boletim.json).
+   * Vazio quando o item chegou sem Radar definido.
+   */
+  radares_definidos: BoletimId[]
   url: string
   origem: OrigemNoticia
-  /** A IA nao devolveu esta publicacao; ela veio da coleta. */
-  nao_classificada_ia?: boolean
-  sugestao_sem_ia?: SugestaoSemIa
 }
 
 export interface ItemRevisao {
@@ -116,6 +110,12 @@ export interface DecisaoExportada {
   status: StatusFinal
   /** O que a pessoa fez no portal. Apenas para auditoria. */
   status_portal: StatusRevisao
+  /** O mesmo, em uma palavra: mantida, retirada, radar_alterado... */
+  acao_revisao: AcaoRevisao
+  /** Radares com que o item chegou ao portal, para comparar com os finais. */
+  radares_originais: BoletimId[]
+  /** Por que o item ficou fora do e-mail (retirado ou sem Radar). */
+  motivo?: string
   origem: OrigemNoticia
   url: string
   fonte: string
@@ -148,6 +148,8 @@ export interface RevisaoPayload {
   total_itens: number
   total_aprovados: number
   total_rejeitados: number
+  /** Dos rejeitados, os que chegaram sem Radar e ninguem atribuiu um. */
+  total_sem_radar: number
   decisoes: DecisaoExportada[]
   /**
    * Radares que vao sair sem nenhuma noticia, com ciencia explicita de quem

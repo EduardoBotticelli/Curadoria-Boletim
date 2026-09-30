@@ -50,7 +50,7 @@ function LoginForm() {
             <LockIcon className="size-6 text-primary" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold">Curadoria do Boletim</h1>
+            <h1 className="text-xl font-semibold">Curadoria dos Radares</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               Acesso restrito. Digite a senha para continuar.
             </p>

@@ -1,9 +1,16 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { ArrowRightIcon, CheckCircle2Icon, InboxIcon, TriangleAlertIcon } from "lucide-react"
+import {
+  ArrowRightIcon,
+  CheckCircle2Icon,
+  ChevronDownIcon,
+  InboxIcon,
+  TriangleAlertIcon,
+} from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import {
   Empty,
   EmptyDescription,
@@ -24,19 +31,18 @@ import {
   carregarManuais,
   carregarProgresso,
   carregarRadaresVaziosConfirmados,
+  escolherRadares,
+  itemInicial,
   limparProgresso,
   montarPayloadRevisao,
   radaresSemConteudo,
+  restaurarItem,
   salvarManuais,
   salvarProgresso,
+  vaiParaOEmail,
 } from "@/lib/revisao"
-import type {
-  BoletimId,
-  FonteEmDefeso,
-  ItemRevisao,
-  Noticia,
-  StatusRevisao,
-} from "@/lib/types"
+import type { BoletimId, FonteEmDefeso, ItemRevisao, Noticia } from "@/lib/types"
+import { cn } from "@/lib/utils"
 
 interface DashboardProps {
   dataExtenso: string
@@ -47,26 +53,25 @@ interface DashboardProps {
   erroCarregamento: string | null
 }
 
-/**
- * Cria itens de revisao a partir das noticias.
- * - Se a noticia foi classificada em algum boletim: status = "aprovado" (ja vai pro boletim final)
- * - Se a noticia eh orfã (nenhum boletim): status = "pendente" (Alice pode resgatar se quiser)
- * - Se a IA nao a classificou e o pipeline sugeriu um Radar sem IA: continua
- *   "pendente", mas com o Radar sugerido ja marcado. Nao entra no boletim
- *   ate a pessoa confirmar.
- */
-function criarItensDeNoticias(noticias: Noticia[]): ItemRevisao[] {
-  return noticias.map((noticia) => {
-    const temBoletim = noticia.boletins_confirmados_ia.length > 0
-    const sugeridos = noticia.sugestao_sem_ia?.radares ?? []
-    return {
-      noticia,
-      status: (temBoletim ? "aprovado" : "pendente") as StatusRevisao,
-      boletinsFinais: temBoletim ? [...noticia.boletins_confirmados_ia] : [...sugeridos],
-    }
-  })
+function formatarDataCurta(iso: string): string {
+  const [ano, mes, dia] = (iso || "").split("-")
+  return ano && mes && dia ? `${dia}/${mes}/${ano}` : iso
 }
 
+function listarRadares(radares: BoletimId[]): string {
+  return radares.map((radar) => BOLETINS[radar]).join(", ")
+}
+
+/**
+ * A revisao do dia.
+ *
+ * A noticia com Radar chega incluida; quem revisa so age para retirar uma
+ * noticia ou mudar o Radar dela. A que chegou sem Radar fica na lista
+ * recolhida "Sem Radar definido": nao bloqueia nada e so entra no e-mail se
+ * alguem escolher um Radar para ela. O unico bloqueio e o Radar que sairia
+ * sem nenhuma noticia, que precisa de uma noticia ou da confirmacao de que
+ * sai assim (um botao confirma todos de uma vez).
+ */
 export function Dashboard({
   dataExtenso,
   janelaTemporal,
@@ -76,11 +81,12 @@ export function Dashboard({
   erroCarregamento,
 }: DashboardProps) {
   const [mounted, setMounted] = useState(false)
-  const [itens, setItens] = useState<ItemRevisao[]>(() => criarItensDeNoticias(noticias))
-  const [statusFiltro, setStatusFiltro] = useState<StatusFiltro>("todos")
+  const [itens, setItens] = useState<ItemRevisao[]>(() => noticias.map(itemInicial))
+  const [statusFiltro, setStatusFiltro] = useState<StatusFiltro>("todas")
   const [boletimFiltro, setBoletimFiltro] = useState<BoletimId | "todos">("todos")
   const [focadoId, setFocadoId] = useState<string | null>(null)
   const [ajusteAbertoId, setAjusteAbertoId] = useState<string | null>(null)
+  const [semRadarAberto, setSemRadarAberto] = useState(false)
   const [confirmAberto, setConfirmAberto] = useState(false)
   const [radaresVaziosAberto, setRadaresVaziosAberto] = useState(false)
   const [radaresVaziosConfirmados, setRadaresVaziosConfirmados] = useState<BoletimId[]>([])
@@ -89,7 +95,7 @@ export function Dashboard({
   const [finalizado, setFinalizado] = useState(false)
 
   // Restaura, ao montar no cliente, os itens manuais e o progresso da revisao
-  // salvos para esta mesma edicao do boletim.
+  // salvos para esta mesma edicao.
   useEffect(() => {
     setMounted(true)
 
@@ -103,11 +109,7 @@ export function Dashboard({
 
       const itensManuais: ItemRevisao[] = manuais
         .filter((noticia) => !idsExistentes.has(noticia.id))
-        .map((noticia) => ({
-          noticia,
-          status: "aprovado" as StatusRevisao,
-          boletinsFinais: [...noticia.boletins_confirmados_ia],
-        }))
+        .map(itemInicial)
 
       const lista = [...itensManuais, ...atual]
 
@@ -131,137 +133,106 @@ export function Dashboard({
     salvarProgresso(dataExecucao, itens, radaresVaziosConfirmados)
   }, [mounted, finalizado, dataExecucao, itens, radaresVaziosConfirmados])
 
-  // As fontes suspensas chegam do backend como objetos { fonte, motivo,
-  // reativar_em }. Antes eram strings, e o portal ainda chamava .split() nelas,
-  // o que quebrava a pagina inteira na hidratacao.
-  const resumoDefeso = useMemo(() => {
-    const motivos = new Set(
-      fontesEmDefeso.map((fonte) => fonte.motivo).filter((motivo) => motivo)
-    )
-    const reativacoes = new Set(
-      fontesEmDefeso.map((fonte) => fonte.reativar_em).filter((data) => data)
-    )
+  // Fontes que nao foram consultadas nesta edicao. So o nome e a data de
+  // volta: o motivo registrado no pipeline pode ser tecnico.
+  const textoFontesSuspensas = useMemo(
+    () =>
+      fontesEmDefeso
+        .map((fonte) =>
+          fonte.reativar_em
+            ? `${fonte.fonte} (volta em ${formatarDataCurta(fonte.reativar_em)})`
+            : fonte.fonte
+        )
+        .join(", "),
+    [fontesEmDefeso]
+  )
 
-    const partes: string[] = []
-    if (motivos.size > 0) partes.push(`Motivo: ${[...motivos].join("; ")}.`)
-    if (reativacoes.size === 1) {
-      partes.push(`Previsao de retorno: ${[...reativacoes][0]}.`)
-    } else if (reativacoes.size > 1) {
-      partes.push(`Previsoes de retorno: ${[...reativacoes].join(", ")}.`)
-    }
+  const principais = useMemo(() => itens.filter((item) => item.status !== "sem_radar"), [itens])
+  const semRadar = useMemo(() => itens.filter((item) => item.status === "sem_radar"), [itens])
 
-    return partes.join(" ")
-  }, [fontesEmDefeso])
-
-  const stats = useMemo(() => {
-    const contagem = { aprovado: 0, rejeitado: 0, ajustado: 0, pendente: 0 }
-    for (const item of itens) contagem[item.status]++
-    return {
-      total: itens.length,
-      aprovados: contagem.aprovado,
-      rejeitados: contagem.rejeitado,
-      ajustados: contagem.ajustado,
-      pendentes: contagem.pendente,
-    }
-  }, [itens])
+  const stats = useMemo(
+    () => ({
+      noEmail: itens.filter(vaiParaOEmail).length,
+      alteradas: itens.filter((item) => item.status === "ajustado").length,
+      retiradas: itens.filter((item) => item.status === "rejeitado").length,
+      semRadar: semRadar.length,
+    }),
+    [itens, semRadar]
+  )
 
   const contagemBoletins = useMemo(() => {
     const contagem = Object.fromEntries(BOLETIM_IDS.map((id) => [id, 0])) as Record<BoletimId, number>
     for (const item of itens) {
-      // Nao conta itens rejeitados nem pendentes
-      if (item.status === "rejeitado" || item.status === "pendente") continue
+      if (!vaiParaOEmail(item)) continue
       for (const boletim of item.boletinsFinais) contagem[boletim]++
     }
     return contagem
   }, [itens])
 
   const itensFiltrados = useMemo(() => {
-    return itens.filter((item) => {
-      if (statusFiltro !== "todos") {
-        const combinaStatus =
-          statusFiltro === "aprovado"
-            ? item.status === "aprovado" || item.status === "ajustado"
-            : item.status === statusFiltro
-        if (!combinaStatus) return false
-      }
+    return principais.filter((item) => {
+      if (statusFiltro === "alteradas" && item.status !== "ajustado") return false
+      if (statusFiltro === "retiradas" && item.status !== "rejeitado") return false
       if (boletimFiltro !== "todos" && !item.boletinsFinais.includes(boletimFiltro)) {
         return false
       }
       return true
     })
-  }, [itens, statusFiltro, boletimFiltro])
+  }, [principais, statusFiltro, boletimFiltro])
 
-  const aprovar = useCallback((id: string) => {
-    setItens((atual) =>
-      atual.map((item) => {
-        if (item.noticia.id !== id) return item
-        if (item.noticia.boletins_confirmados_ia.length === 0) {
-          toast.info(
-            item.noticia.sugestao_sem_ia
-              ? "Sugestao sem IA: confira o Radar marcado e salve, ou troque."
-              : "Item sem sugestao da IA. Escolha manualmente em quais boletins incluir."
-          )
-          return item
-        }
-        return {
-          ...item,
-          status: "aprovado",
-          boletinsFinais: [...item.noticia.boletins_confirmados_ia],
-        }
+  const atualizarItem = useCallback(
+    (id: string, mudar: (item: ItemRevisao) => ItemRevisao) => {
+      setItens((atual) => atual.map((item) => (item.noticia.id === id ? mudar(item) : item)))
+    },
+    []
+  )
+
+  const desfazer = useCallback(
+    (id: string) => {
+      atualizarItem(id, restaurarItem)
+      toast("Notícia de volta como chegou")
+    },
+    [atualizarItem]
+  )
+
+  const retirar = useCallback(
+    (id: string) => {
+      atualizarItem(id, (item) => escolherRadares(item, []))
+      setAjusteAbertoId((atual) => (atual === id ? null : atual))
+      toast("Notícia retirada do e-mail", {
+        action: { label: "Desfazer", onClick: () => atualizarItem(id, restaurarItem) },
       })
-    )
-    const item = itens.find((i) => i.noticia.id === id)
-    if (item && item.noticia.boletins_confirmados_ia.length === 0) {
-      setAjusteAbertoId(id)
-      return
-    }
-    setAjusteAbertoId((atual) => (atual === id ? null : atual))
-    toast.success("Item aprovado")
-  }, [itens])
+    },
+    [atualizarItem]
+  )
 
-  const rejeitar = useCallback((id: string) => {
-    setItens((atual) =>
-      atual.map((item) =>
-        item.noticia.id === id ? { ...item, status: "rejeitado", boletinsFinais: [] } : item
-      )
-    )
-    setAjusteAbertoId((atual) => (atual === id ? null : atual))
-    toast("Item removido do boletim")
-  }, [])
-
-  const salvarAjustes = useCallback((id: string, boletins: BoletimId[]) => {
-    setItens((atual) =>
-      atual.map((item) =>
-        item.noticia.id === id
-          ? {
-              ...item,
-              status: boletins.length > 0 ? "ajustado" : "rejeitado",
-              boletinsFinais: boletins,
-            }
-          : item
-      )
-    )
-    setAjusteAbertoId(null)
-    toast.success(boletins.length > 0 ? "Ajustes salvos" : "Item removido de todos os boletins")
-  }, [])
+  const salvarRadares = useCallback(
+    (id: string, radares: BoletimId[]) => {
+      const antes = itens.find((item) => item.noticia.id === id)
+      atualizarItem(id, (item) => escolherRadares(item, radares))
+      setAjusteAbertoId(null)
+      if (radares.length === 0) {
+        toast("Notícia fora do e-mail")
+      } else if (antes?.status === "sem_radar") {
+        toast.success(`Notícia incluída em ${listarRadares(radares)}`)
+      } else {
+        toast.success("Radar alterado")
+      }
+    },
+    [itens, atualizarItem]
+  )
 
   const adicionarItemManual = useCallback(
     (noticia: Noticia) => {
-      const novoItem: ItemRevisao = {
-        noticia,
-        status: "aprovado",
-        boletinsFinais: [...noticia.boletins_confirmados_ia],
-      }
-
       setItens((atual) => {
-        // O id manual e derivado do conteudo, entao adicionar o mesmo item
-        // duas vezes apenas atualiza o existente em vez de duplicar.
+        // O id manual e derivado do conteudo, entao adicionar a mesma noticia
+        // duas vezes apenas atualiza a existente em vez de duplicar.
         if (atual.some((item) => item.noticia.id === noticia.id)) {
-          toast.info("Esse item ja foi adicionado.")
+          toast.info("Essa notícia já foi adicionada.")
           return atual
         }
 
-        const novaLista = [novoItem, ...atual]
+        const novaLista = [itemInicial(noticia), ...atual]
         const manuais = novaLista
           .filter((item) => item.noticia.origem === "manual")
           .map((item) => item.noticia)
@@ -272,44 +243,11 @@ export function Dashboard({
     [dataExecucao]
   )
 
-  const resumoConfirmacao = useMemo(() => {
-    const incluidos = itens.filter(
-      (item) =>
-        item.status !== "rejeitado" &&
-        item.status !== "pendente" &&
-        item.boletinsFinais.length > 0
-    ).length
-
-    const boletinsGerados = BOLETIM_IDS.filter((id) => contagemBoletins[id] > 0).map((id) => ({
-      boletim: id,
-      quantidade: contagemBoletins[id],
-    }))
-
-    return {
-      incluidos,
-      rejeitados: stats.rejeitados,
-      ajustados: stats.ajustados,
-      boletinsGerados,
-    }
-  }, [itens, contagemBoletins, stats.rejeitados, stats.ajustados])
-
-  /**
-   * A revisao so pode ser concluida quando todo item tem decisao.
-   * Item pendente nao e convertido nem descartado: ele bloqueia.
-   */
-  const bloqueadoPorPendencias = stats.pendentes > 0
-
-  const textoPendencias =
-    stats.pendentes === 1
-      ? "1 item ainda precisa ser revisado"
-      : `${stats.pendentes} itens ainda precisam ser revisados`
-
-  // Radares que sairiam sem nenhuma publicacao com as decisoes de agora.
+  // Radares que sairiam sem nenhuma noticia com as decisoes de agora.
   const radaresVazios = useMemo(() => radaresSemConteudo(itens), [itens])
 
-  // A ciencia vale para o Radar que esta vazio agora. Se ele receber uma
-  // publicacao depois, a marcacao antiga deixa de valer: se voltar a ficar
-  // vazio, a decisao precisa ser tomada de novo.
+  // A confirmacao vale para o Radar que esta vazio agora. Se ele receber uma
+  // noticia depois e voltar a ficar vazio, a decisao precisa ser tomada de novo.
   useEffect(() => {
     setRadaresVaziosConfirmados((atual) => {
       const vazios = new Set(radaresVazios)
@@ -323,38 +261,34 @@ export function Dashboard({
     return radaresVazios.filter((radar) => !confirmados.has(radar))
   }, [radaresVazios, radaresVaziosConfirmados])
 
-  /**
-   * Radar vazio tambem bloqueia. Em vez de sair so com a mensagem padrao,
-   * quem revisa decide: inclui alguma publicacao coletada hoje ou marca que
-   * o Radar pode sair vazio mesmo assim. O gerador nao inclui nada sozinho.
-   */
-  const bloqueadoPorRadarVazio = radaresVaziosPendentes.length > 0
-  const bloqueado = bloqueadoPorPendencias || bloqueadoPorRadarVazio
+  const bloqueado = radaresVaziosPendentes.length > 0
 
-  const textoRadaresVazios =
-    radaresVaziosPendentes.length === 1
-      ? "1 Radar sairia sem publicacoes"
-      : `${radaresVaziosPendentes.length} Radares sairiam sem publicacoes`
+  const resumoConfirmacao = useMemo(
+    () => ({
+      incluidas: stats.noEmail,
+      retiradas: stats.retiradas,
+      alteradas: stats.alteradas,
+      semRadar: stats.semRadar,
+      boletinsGerados: BOLETIM_IDS.filter((id) => contagemBoletins[id] > 0).map((id) => ({
+        boletim: id,
+        quantidade: contagemBoletins[id],
+      })),
+    }),
+    [stats, contagemBoletins]
+  )
 
-  const textoBloqueio = bloqueadoPorPendencias
-    ? textoPendencias
-    : textoRadaresVazios
-
-  /** Acrescenta um item a um Radar que estava vazio. */
-  const incluirNoRadar = useCallback((id: string, radar: BoletimId) => {
-    setItens((atual) =>
-      atual.map((item) => {
-        if (item.noticia.id !== id) return item
-        if (item.boletinsFinais.includes(radar)) return item
-        return {
-          ...item,
-          status: "ajustado",
-          boletinsFinais: [...item.boletinsFinais, radar],
-        }
-      })
-    )
-    toast.success(`Item incluido em ${BOLETINS[radar]}`)
-  }, [])
+  /** Acrescenta uma noticia a um Radar que estava vazio. */
+  const incluirNoRadar = useCallback(
+    (id: string, radar: BoletimId) => {
+      atualizarItem(id, (item) =>
+        item.boletinsFinais.includes(radar)
+          ? item
+          : escolherRadares(item, [...item.boletinsFinais, radar])
+      )
+      toast.success(`Notícia incluída em ${BOLETINS[radar]}`)
+    },
+    [atualizarItem]
+  )
 
   const alternarConfirmacaoRadarVazio = useCallback(
     (radar: BoletimId, confirmado: boolean) => {
@@ -368,32 +302,34 @@ export function Dashboard({
     []
   )
 
+  /** Um clique: todos os Radares vazios saem sem publicacoes. */
+  const confirmarTodosVazios = useCallback(() => {
+    setRadaresVaziosConfirmados([...radaresVazios])
+    toast.success(
+      radaresVazios.length === 1
+        ? "O Radar sem notícias vai sair sem publicações."
+        : `Os ${radaresVazios.length} Radares sem notícias vão sair sem publicações.`
+    )
+  }, [radaresVazios])
+
+  const abrirConfirmacao = useCallback(() => {
+    if (finalizado) return
+    if (bloqueado) {
+      setRadaresVaziosAberto(true)
+      return
+    }
+    setConfirmAberto(true)
+  }, [finalizado, bloqueado])
+
   const confirmarRevisao = useCallback(async () => {
     if (itens.length === 0) {
-      toast.error("Nao ha itens para revisar.")
+      toast.error("Não há notícias nesta edição.")
       return
     }
 
-    // Rede de seguranca: o botao ja fica desabilitado nesse caso, e o
-    // montarPayloadRevisao tambem recusa. Nenhum item pendente e convertido
-    // em rejeitado nem descartado em silencio.
-    const pendentes = itens.filter((item) => item.status === "pendente")
-    if (pendentes.length > 0) {
-      toast.error(
-        pendentes.length === 1
-          ? "Ainda ha 1 item pendente. Revise-o antes de confirmar."
-          : `Ainda ha ${pendentes.length} itens pendentes. Revise todos antes de confirmar.`
-      )
-      setConfirmAberto(false)
-      return
-    }
-
-    // Mesma rede de seguranca para os Radares vazios: o botao ja fica
-    // desabilitado e o montarPayloadRevisao tambem recusa.
+    // Rede de seguranca: o botao ja leva aos Radares vazios, e o
+    // montarPayloadRevisao tambem recusa.
     if (radaresVaziosPendentes.length > 0) {
-      toast.error(
-        `${textoRadaresVazios}. Inclua alguma publicacao ou confirme o envio vazio.`
-      )
       setConfirmAberto(false)
       setRadaresVaziosAberto(true)
       return
@@ -411,30 +347,24 @@ export function Dashboard({
 
       if (!resposta.ok) {
         const dados = await resposta.json().catch(() => null)
-        throw new Error(dados?.erro || "Falha ao enviar a revisao")
+        throw new Error(dados?.erro || "Não foi possível enviar a revisão.")
       }
 
-      // A revisao foi aceita pelo backend: o rascunho local nao serve mais.
+      // A revisao foi aceita: o rascunho local nao serve mais.
       limparProgresso()
       setConfirmAberto(false)
       setFinalizado(true)
-      toast.success("Revisao confirmada! Os boletins serao gerados e enviados.")
+      toast.success("Revisão confirmada. Os Radares vão ser gerados e enviados.")
     } catch (erro) {
       toast.error(
         erro instanceof Error
           ? erro.message
-          : "Nao foi possivel confirmar a revisao. Tente novamente."
+          : "Não foi possível confirmar a revisão. Tente novamente."
       )
     } finally {
       setEnviando(false)
     }
-  }, [
-    itens,
-    dataExecucao,
-    radaresVaziosConfirmados,
-    radaresVaziosPendentes,
-    textoRadaresVazios,
-  ])
+  }, [itens, dataExecucao, radaresVaziosConfirmados, radaresVaziosPendentes])
 
   useEffect(() => {
     if (!mounted) return
@@ -445,23 +375,11 @@ export function Dashboard({
 
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault()
-        if (finalizado) return
-        if (bloqueadoPorPendencias) {
-          toast.error(`${textoPendencias}. Revise todos antes de confirmar.`)
-          return
-        }
-        if (bloqueadoPorRadarVazio) {
-          toast.error(
-            `${textoRadaresVazios}. Inclua alguma publicacao ou confirme o envio vazio.`
-          )
-          setRadaresVaziosAberto(true)
-          return
-        }
-        setConfirmAberto(true)
+        abrirConfirmacao()
         return
       }
 
-      if (confirmAberto || ajudaAberta) return
+      if (confirmAberto || ajudaAberta || radaresVaziosAberto) return
 
       if (e.key === "?") {
         e.preventDefault()
@@ -482,16 +400,18 @@ export function Dashboard({
       }
 
       if (!focadoId || finalizado) return
+      const focado = itens.find((item) => item.noticia.id === focadoId)
+      if (!focado) return
       const tecla = e.key.toLowerCase()
-      if (tecla === "a") {
+      if (tecla === "r") {
         e.preventDefault()
-        aprovar(focadoId)
-      } else if (tecla === "r") {
-        e.preventDefault()
-        rejeitar(focadoId)
+        if (focado.status === "rejeitado") desfazer(focadoId)
+        else if (vaiParaOEmail(focado)) retirar(focadoId)
       } else if (tecla === "e") {
         e.preventDefault()
-        setAjusteAbertoId((atual) => (atual === focadoId ? null : focadoId))
+        if (focado.status !== "rejeitado") {
+          setAjusteAbertoId((atual) => (atual === focadoId ? null : focadoId))
+        }
       }
     }
 
@@ -500,17 +420,33 @@ export function Dashboard({
   }, [
     mounted,
     focadoId,
+    itens,
     itensFiltrados,
     confirmAberto,
     ajudaAberta,
+    radaresVaziosAberto,
     finalizado,
-    bloqueadoPorPendencias,
-    textoPendencias,
-    bloqueadoPorRadarVazio,
-    textoRadaresVazios,
-    aprovar,
-    rejeitar,
+    abrirConfirmacao,
+    retirar,
+    desfazer,
   ])
+
+  function cartao(item: ItemRevisao) {
+    return (
+      <NewsCard
+        key={item.noticia.id}
+        item={item}
+        focado={focadoId === item.noticia.id}
+        ajusteAberto={ajusteAbertoId === item.noticia.id}
+        desabilitado={finalizado}
+        onFocar={() => setFocadoId(item.noticia.id)}
+        onRetirar={() => retirar(item.noticia.id)}
+        onDesfazer={() => desfazer(item.noticia.id)}
+        onAbrirAjuste={(aberto) => setAjusteAbertoId(aberto ? item.noticia.id : null)}
+        onSalvarRadares={(radares) => salvarRadares(item.noticia.id, radares)}
+      />
+    )
+  }
 
   if (!mounted) {
     return (
@@ -521,7 +457,7 @@ export function Dashboard({
           onAbrirAjuda={() => {}}
         />
         <main className="mx-auto flex w-full max-w-4xl flex-1 items-center justify-center px-4 py-12">
-          <p className="text-sm text-muted-foreground">Carregando curadoria...</p>
+          <p className="text-sm text-muted-foreground">Carregando as notícias...</p>
         </main>
       </div>
     )
@@ -545,9 +481,9 @@ export function Dashboard({
               aria-hidden="true"
             />
             <div className="text-sm text-foreground/90">
-              <span className="font-semibold">Nao foi possivel carregar o boletim.</span>{" "}
-              {erroCarregamento}. Verifique se o workflow do repositorio
-              boletim-automacao ja publicou o output/boletim.json de hoje.
+              <span className="font-semibold">Não foi possível carregar as notícias de hoje.</span>{" "}
+              Tente recarregar a página em alguns minutos. Se continuar, avise o responsável
+              pelo sistema.
             </div>
           </div>
         )}
@@ -556,9 +492,8 @@ export function Dashboard({
           <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4">
             <TriangleAlertIcon className="mt-0.5 size-5 shrink-0 text-amber-600" aria-hidden="true" />
             <div className="text-sm text-amber-900">
-              <span className="font-semibold">Fontes suspensas nesta edicao:</span>{" "}
-              {fontesEmDefeso.map((fonte) => fonte.fonte).join(", ")}.{" "}
-              {resumoDefeso}
+              <span className="font-semibold">Fontes não consultadas nesta edição:</span>{" "}
+              {textoFontesSuspensas}.
             </div>
           </div>
         )}
@@ -572,21 +507,28 @@ export function Dashboard({
             <div className="min-w-0 flex-1 text-sm text-foreground/90">
               <span className="font-semibold">
                 {radaresVazios.length === 1
-                  ? "1 Radar sairia sem nenhuma publicacao:"
-                  : `${radaresVazios.length} Radares sairiam sem nenhuma publicacao:`}
+                  ? "1 Radar está sem notícias:"
+                  : `${radaresVazios.length} Radares estão sem notícias:`}
               </span>{" "}
-              {radaresVazios.map((radar) => BOLETINS[radar]).join(", ")}.{" "}
-              {bloqueadoPorRadarVazio
-                ? "Inclua alguma publicacao coletada hoje ou confirme o envio vazio."
-                : "Envio vazio ja confirmado."}
+              {listarRadares(radaresVazios)}.{" "}
+              {radaresVazios.length === 1
+                ? bloqueado
+                  ? "Ele pode sair assim, com o aviso de que não houve publicações no período, ou você pode incluir alguma notícia nele."
+                  : "Vai sair sem publicações, como você confirmou."
+                : bloqueado
+                  ? "Eles podem sair assim, com o aviso de que não houve publicações no período, ou você pode incluir alguma notícia neles."
+                  : "Vão sair sem publicações, como você confirmou."}
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setRadaresVaziosAberto(true)}
-            >
-              {bloqueadoPorRadarVazio ? "Completar" : "Rever"}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              {bloqueado && (
+                <Button size="sm" onClick={confirmarTodosVazios}>
+                  Enviar sem publicações
+                </Button>
+              )}
+              <Button size="sm" variant="outline" onClick={() => setRadaresVaziosAberto(true)}>
+                {bloqueado ? "Incluir notícias" : "Rever"}
+              </Button>
+            </div>
           </div>
         )}
 
@@ -594,7 +536,7 @@ export function Dashboard({
           <div className="flex items-center gap-3 rounded-xl border border-success/40 bg-success/10 p-4">
             <CheckCircle2Icon className="size-5 shrink-0 text-success" aria-hidden="true" />
             <p className="text-sm text-foreground/90">
-              Revisao confirmada. Os boletins estao sendo gerados e serao enviados aos advogados.
+              Revisão confirmada. Os Radares estão sendo gerados e serão enviados aos advogados.
             </p>
           </div>
         )}
@@ -614,29 +556,52 @@ export function Dashboard({
               <EmptyMedia variant="icon">
                 <InboxIcon />
               </EmptyMedia>
-              <EmptyTitle>Nenhum item encontrado</EmptyTitle>
+              <EmptyTitle>Nenhuma notícia aqui</EmptyTitle>
               <EmptyDescription>
-                Nenhuma noticia corresponde aos filtros selecionados.
+                Nenhuma notícia corresponde aos filtros escolhidos.
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
         ) : (
-          <div className="flex flex-col gap-3">
-            {itensFiltrados.map((item) => (
-              <NewsCard
-                key={item.noticia.id}
-                item={item}
-                focado={focadoId === item.noticia.id}
-                ajusteAberto={ajusteAbertoId === item.noticia.id}
-                desabilitado={finalizado}
-                onFocar={() => setFocadoId(item.noticia.id)}
-                onAprovar={() => aprovar(item.noticia.id)}
-                onRejeitar={() => rejeitar(item.noticia.id)}
-                onAbrirAjuste={(aberto) => setAjusteAbertoId(aberto ? item.noticia.id : null)}
-                onSalvarAjustes={(boletins) => salvarAjustes(item.noticia.id, boletins)}
-              />
-            ))}
-          </div>
+          <div className="flex flex-col gap-3">{itensFiltrados.map(cartao)}</div>
+        )}
+
+        {semRadar.length > 0 && (
+          <Collapsible open={semRadarAberto} onOpenChange={setSemRadarAberto}>
+            <section
+              aria-label="Sem Radar definido"
+              className="mt-4 rounded-xl border border-dashed bg-muted/30"
+            >
+              <CollapsibleTrigger
+                render={
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between gap-3 p-4 text-left"
+                  />
+                }
+              >
+                <div className="flex flex-col gap-1">
+                  <span className="text-sm font-semibold">
+                    Sem Radar definido ({semRadar.length})
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Notícias coletadas que não foram associadas a nenhum Radar. Ficam fora do
+                    e-mail, a menos que você escolha um Radar para alguma delas.
+                  </span>
+                </div>
+                <ChevronDownIcon
+                  className={cn(
+                    "size-4 shrink-0 transition-transform duration-150",
+                    semRadarAberto && "rotate-180"
+                  )}
+                  aria-hidden="true"
+                />
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="flex flex-col gap-3 px-4 pb-4">{semRadar.map(cartao)}</div>
+              </CollapsibleContent>
+            </section>
+          </Collapsible>
         )}
       </main>
 
@@ -647,46 +612,33 @@ export function Dashboard({
       <div className="fixed right-4 bottom-4 z-40 flex flex-col items-end gap-2 md:right-8 md:bottom-8">
         {bloqueado && !finalizado && (
           <p
-            id="aviso-pendencias"
+            id="aviso-radares-vazios"
             role="status"
-            className="max-w-xs rounded-lg border border-warning/40 bg-background/95 px-3 py-2 text-right text-xs text-foreground/80 shadow-lg backdrop-blur"
+            className="hidden max-w-xs rounded-lg border border-warning/40 bg-background/95 px-3 py-2 text-right text-xs text-foreground/80 shadow-lg backdrop-blur md:block"
           >
-            {bloqueadoPorPendencias ? (
-              <>
-                {textoPendencias}. Use o filtro &ldquo;Pendentes&rdquo; para
-                encontr&aacute;-{stats.pendentes === 1 ? "lo" : "los"}.
-              </>
-            ) : (
-              <>
-                {textoRadaresVazios}. Inclua alguma publica&ccedil;&atilde;o ou
-                confirme o envio vazio.
-              </>
-            )}
+            Antes de enviar, confirme os Radares que estão sem notícias.
           </p>
         )}
 
         <Button
           size="lg"
           className="h-12 px-6 text-base shadow-lg"
-          disabled={finalizado || bloqueado}
-          aria-describedby={bloqueado && !finalizado ? "aviso-pendencias" : undefined}
-          onClick={() =>
-            bloqueadoPorRadarVazio
-              ? setRadaresVaziosAberto(true)
-              : setConfirmAberto(true)
-          }
+          disabled={finalizado}
+          aria-describedby={bloqueado && !finalizado ? "aviso-radares-vazios" : undefined}
+          onClick={abrirConfirmacao}
         >
-          {finalizado ? "Revisao confirmada" : bloqueado ? textoBloqueio : "Confirmar revisao"}
-          {!finalizado && !bloqueado && <ArrowRightIcon data-icon="inline-end" />}
+          {finalizado ? "Revisão confirmada" : "Confirmar e enviar"}
+          {!finalizado && <ArrowRightIcon data-icon="inline-end" />}
         </Button>
       </div>
 
       <ConfirmDialog
         aberto={confirmAberto}
         onAbertoChange={setConfirmAberto}
-        incluidos={resumoConfirmacao.incluidos}
-        rejeitados={resumoConfirmacao.rejeitados}
-        ajustados={resumoConfirmacao.ajustados}
+        incluidas={resumoConfirmacao.incluidas}
+        retiradas={resumoConfirmacao.retiradas}
+        alteradas={resumoConfirmacao.alteradas}
+        semRadar={resumoConfirmacao.semRadar}
         boletinsGerados={resumoConfirmacao.boletinsGerados}
         radaresVazios={radaresVazios}
         enviando={enviando}
@@ -701,6 +653,7 @@ export function Dashboard({
         confirmados={radaresVaziosConfirmados}
         onIncluir={incluirNoRadar}
         onAlternarConfirmacao={alternarConfirmacaoRadarVazio}
+        onConfirmarTodos={confirmarTodosVazios}
       />
 
       <ShortcutsDialog aberto={ajudaAberta} onAbertoChange={setAjudaAberta} />
