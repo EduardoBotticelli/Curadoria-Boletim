@@ -1,5 +1,5 @@
 import { idEstavel } from "./ids"
-import type { BoletimId, BoletimMetadata, FonteEmDefeso, Noticia } from "./types"
+import type { BoletimId, BoletimMetadata, FonteEmDefeso, Noticia, SugestaoSemIa } from "./types"
 
 /**
  * Origem do boletim.json.
@@ -29,6 +29,13 @@ interface BackendItem {
   boletins_rejeitados?: BackendBoletimRejeitado[]
   boletins?: string[]
   url?: string
+  nao_classificada_pela_ia?: boolean
+  sugestao_sem_ia?: {
+    radares?: string[]
+    metodo?: string | null
+    evidencia?: string
+    motivo_sem_radar?: string
+  }
 }
 
 interface BackendJson {
@@ -149,6 +156,24 @@ function converterItem(item: BackendItem, idsUsados: Set<string>): Noticia {
     boletins_rejeitados: boletinsRejeitados,
     url,
     origem: "scraper",
+    nao_classificada_ia: item.nao_classificada_pela_ia === true,
+    sugestao_sem_ia: converterSugestao(item, boletinsFinais),
+  }
+}
+
+/**
+ * A sugestao sem IA so vale para item que a IA nao classificou e quando traz
+ * ao menos um Radar valido. Se a IA classificou, a sugestao e ignorada.
+ */
+function converterSugestao(item: BackendItem, boletinsIa: BoletimId[]): SugestaoSemIa | undefined {
+  const bruta = item.sugestao_sem_ia
+  if (!bruta || boletinsIa.length > 0) return undefined
+  const radares = filtrarBoletinsValidos(Array.isArray(bruta.radares) ? bruta.radares : [])
+  if (radares.length === 0) return undefined
+  return {
+    radares,
+    metodo: typeof bruta.metodo === "string" ? bruta.metodo : "",
+    evidencia: typeof bruta.evidencia === "string" ? bruta.evidencia : "",
   }
 }
 
