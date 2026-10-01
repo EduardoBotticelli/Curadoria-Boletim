@@ -60,19 +60,19 @@ export function AddItemDialog({ onAdicionar, desabilitado }: AddItemDialogProps)
     e.preventDefault()
 
     if (!titulo.trim()) {
-      toast.error("O titulo eh obrigatorio")
+      toast.error("Informe o título")
       return
     }
     if (!resumo.trim()) {
-      toast.error("O resumo eh obrigatorio")
+      toast.error("Informe o resumo")
       return
     }
     if (!fonte.trim()) {
-      toast.error("A fonte eh obrigatoria")
+      toast.error("Informe a fonte")
       return
     }
     if (boletinsSelecionados.length === 0) {
-      toast.error("Selecione ao menos um boletim de destino")
+      toast.error("Escolha pelo menos um Radar")
       return
     }
 
@@ -89,16 +89,13 @@ export function AddItemDialog({ onAdicionar, desabilitado }: AddItemDialogProps)
       titulo: tituloLimpo,
       data_publicacao: dataPublicacao || dataHojeISO(),
       resumo: resumo.trim(),
-      motivo_filtragem: "Item adicionado manualmente pela curadoria.",
-      palavras_chave_detectadas: [],
-      boletins_confirmados_ia: boletinsSelecionados,
-      boletins_rejeitados: [],
+      radares_definidos: boletinsSelecionados,
       url: urlLimpa,
       origem: "manual",
     }
 
     onAdicionar(novaNoticia)
-    toast.success("Item adicionado ao boletim")
+    toast.success("Notícia adicionada")
     resetar()
     setAberto(false)
   }
@@ -115,16 +112,16 @@ export function AddItemDialog({ onAdicionar, desabilitado }: AddItemDialogProps)
         render={<Button variant="outline" size="sm" disabled={desabilitado} />}
       >
         <PlusIcon />
-        Adicionar item
+        Adicionar not&iacute;cia
       </DialogTrigger>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Adicionar item manualmente</DialogTitle>
+          <DialogTitle>Adicionar uma not&iacute;cia</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="titulo">Titulo *</Label>
+            <Label htmlFor="titulo">T&iacute;tulo *</Label>
             <input
               id="titulo"
               type="text"
@@ -143,7 +140,7 @@ export function AddItemDialog({ onAdicionar, desabilitado }: AddItemDialogProps)
               value={resumo}
               onChange={(e) => setResumo(e.target.value)}
               className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              placeholder="Descricao breve do conteudo..."
+              placeholder="Resumo breve do conte&uacute;do..."
               required
             />
           </div>
@@ -163,7 +160,7 @@ export function AddItemDialog({ onAdicionar, desabilitado }: AddItemDialogProps)
             </div>
 
             <div className="flex flex-col gap-2">
-              <Label htmlFor="data">Data de publicacao</Label>
+              <Label htmlFor="data">Data de publica&ccedil;&atilde;o</Label>
               <input
                 id="data"
                 type="date"
@@ -187,7 +184,7 @@ export function AddItemDialog({ onAdicionar, desabilitado }: AddItemDialogProps)
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label>Boletins de destino *</Label>
+            <Label>Radares em que vai sair *</Label>
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
               {BOLETIM_IDS.map((id) => {
                 const checkboxId = `add-${id}`

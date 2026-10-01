@@ -10,11 +10,10 @@ import {
 import { Kbd, KbdGroup } from "@/components/ui/kbd"
 
 const ATALHOS: { teclas: string[]; descricao: string }[] = [
-  { teclas: ["A"], descricao: "Aprovar o card em foco" },
-  { teclas: ["R"], descricao: "Rejeitar o card em foco" },
-  { teclas: ["E"], descricao: "Expandir \u201cajustar boletins\u201d do card em foco" },
-  { teclas: ["\u2191", "\u2193"], descricao: "Navegar entre os cards" },
-  { teclas: ["Ctrl", "Enter"], descricao: "Abrir confirma\u00e7\u00e3o final" },
+  { teclas: ["R"], descricao: "Retirar a not\u00edcia selecionada (ou desfazer)" },
+  { teclas: ["E"], descricao: "Mudar o Radar da not\u00edcia selecionada" },
+  { teclas: ["\u2191", "\u2193"], descricao: "Passar de uma not\u00edcia para outra" },
+  { teclas: ["Ctrl", "Enter"], descricao: "Confirmar e enviar" },
   { teclas: ["?"], descricao: "Abrir esta ajuda" },
 ]
 
@@ -29,7 +28,7 @@ export function ShortcutsDialog({ aberto, onAbertoChange }: ShortcutsDialogProps
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>Atalhos de teclado</DialogTitle>
-          <DialogDescription>Acelere a curadoria di&aacute;ria com o teclado.</DialogDescription>
+          <DialogDescription>Para revisar mais r&aacute;pido pelo teclado.</DialogDescription>
         </DialogHeader>
         <ul className="flex flex-col gap-2.5">
           {ATALHOS.map((atalho) => (

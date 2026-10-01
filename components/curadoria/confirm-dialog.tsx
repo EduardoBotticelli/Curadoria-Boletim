@@ -19,22 +19,28 @@ import type { BoletimId } from "@/lib/types"
 interface ConfirmDialogProps {
   aberto: boolean
   onAbertoChange: (aberto: boolean) => void
-  incluidos: number
-  rejeitados: number
-  ajustados: number
+  incluidas: number
+  retiradas: number
+  alteradas: number
+  semRadar: number
   boletinsGerados: { boletim: BoletimId; quantidade: number }[]
-  /** Radares que vao sair so com a mensagem padrao, por decisao de quem revisa. */
+  /** Radares que vao sair sem noticias, como quem revisa confirmou. */
   radaresVazios: BoletimId[]
   enviando: boolean
   onConfirmar: () => void
 }
 
+function plural(quantidade: number, singular: string, varias: string): string {
+  return quantidade === 1 ? singular : varias
+}
+
 export function ConfirmDialog({
   aberto,
   onAbertoChange,
-  incluidos,
-  rejeitados,
-  ajustados,
+  incluidas,
+  retiradas,
+  alteradas,
+  semRadar,
   boletinsGerados,
   radaresVazios,
   enviando,
@@ -44,26 +50,37 @@ export function ConfirmDialog({
     <Dialog open={aberto} onOpenChange={onAbertoChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Confirmar revis&atilde;o do boletim?</DialogTitle>
-          <DialogDescription>Resumo da curadoria de hoje:</DialogDescription>
+          <DialogTitle>Enviar os Radares de hoje?</DialogTitle>
+          <DialogDescription>Resumo da revisão:</DialogDescription>
         </DialogHeader>
 
         <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
           <li>
-            <strong>{incluidos}</strong> {incluidos === 1 ? "item ser\u00e1 inclu\u00eddo" : "itens ser\u00e3o inclu\u00eddos"} nos boletins finais
+            <strong>{incluidas}</strong>{" "}
+            {plural(incluidas, "notícia vai", "notícias vão")} para os Radares
           </li>
-          <li>
-            <strong>{rejeitados}</strong>{" "}
-            {rejeitados === 1 ? "item foi rejeitado" : "itens foram rejeitados"}{" "}
-            por voc&ecirc;
-          </li>
-          <li>
-            <strong>{ajustados}</strong> {ajustados === 1 ? "item teve os boletins ajustados" : "itens tiveram os boletins ajustados"} manualmente
-          </li>
+          {alteradas > 0 && (
+            <li>
+              <strong>{alteradas}</strong>{" "}
+              {plural(alteradas, "teve o Radar alterado", "tiveram o Radar alterado")} por você
+            </li>
+          )}
+          {retiradas > 0 && (
+            <li>
+              <strong>{retiradas}</strong>{" "}
+              {plural(retiradas, "foi retirada", "foram retiradas")} por você
+            </li>
+          )}
+          {semRadar > 0 && (
+            <li>
+              <strong>{semRadar}</strong>{" "}
+              {plural(semRadar, "notícia sem Radar fica", "notícias sem Radar ficam")} de fora
+            </li>
+          )}
         </ul>
 
         <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium">Boletins gerados:</span>
+          <span className="text-sm font-medium">Radares com notícias:</span>
           {boletinsGerados.length > 0 ? (
             <div className="flex flex-wrap gap-1">
               {boletinsGerados.map(({ boletim, quantidade }) => (
@@ -77,15 +94,13 @@ export function ConfirmDialog({
               ))}
             </div>
           ) : (
-            <span className="text-sm text-muted-foreground">Nenhum boletim ser&aacute; gerado.</span>
+            <span className="text-sm text-muted-foreground">Nenhum.</span>
           )}
         </div>
 
         {radaresVazios.length > 0 && (
           <div className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium">
-              Radares que sair&atilde;o sem publica&ccedil;&otilde;es:
-            </span>
+            <span className="text-sm font-medium">Radares que saem sem publicações:</span>
             <div className="flex flex-wrap gap-1">
               {radaresVazios.map((boletim) => (
                 <Badge
@@ -98,8 +113,7 @@ export function ConfirmDialog({
               ))}
             </div>
             <span className="text-xs text-muted-foreground">
-              Cada um sai com a mensagem padr&atilde;o de que n&atilde;o houve
-              atualiza&ccedil;&otilde;es no per&iacute;odo.
+              Cada um sai com o aviso de que não houve publicações no período.
             </span>
           </div>
         )}
@@ -107,18 +121,18 @@ export function ConfirmDialog({
         <Alert className="border-warning/40 bg-warning/10 text-foreground">
           <TriangleAlertIcon className="text-warning" />
           <AlertDescription className="text-foreground/80">
-            Ap&oacute;s confirmar, os boletins ser&atilde;o gerados e enviados aos advogados. Esta
-            a&ccedil;&atilde;o &eacute; irrevers&iacute;vel.
+            Depois de confirmar, os Radares são gerados e enviados aos advogados. Não dá
+            para desfazer.
           </AlertDescription>
         </Alert>
 
         <DialogFooter>
           <Button variant="outline" disabled={enviando} onClick={() => onAbertoChange(false)}>
-            Cancelar
+            Voltar
           </Button>
           <Button disabled={enviando} onClick={onConfirmar}>
             {enviando && <Spinner data-icon="inline-start" />}
-            Confirmar e gerar boletins
+            Confirmar e enviar
           </Button>
         </DialogFooter>
       </DialogContent>

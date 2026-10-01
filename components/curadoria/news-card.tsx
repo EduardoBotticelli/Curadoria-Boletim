@@ -2,16 +2,15 @@
 
 import { useEffect, useRef, useState } from "react"
 import {
-  ChevronDownIcon,
   ExternalLinkIcon,
   PlusCircleIcon,
   SlidersHorizontalIcon,
+  Undo2Icon,
   XIcon,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Separator } from "@/components/ui/separator"
 import { StatusBadge } from "./status-badge"
 import { BOLETIM_IDS, BOLETINS } from "@/lib/boletins"
@@ -24,42 +23,49 @@ interface NewsCardProps {
   ajusteAberto: boolean
   desabilitado?: boolean
   onFocar: () => void
-  onAprovar: () => void
-  onRejeitar: () => void
+  onRetirar: () => void
+  onDesfazer: () => void
   onAbrirAjuste: (aberto: boolean) => void
-  onSalvarAjustes: (boletins: BoletimId[]) => void
+  onSalvarRadares: (radares: BoletimId[]) => void
 }
 
 function formatarData(iso: string): string {
   // O pipeline grava data_publicacao vazia quando nao consegue interpretar a
   // data da publicacao, entao o formato nem sempre e AAAA-MM-DD.
   const [ano, mes, dia] = (iso || "").split("-").map(Number)
-  if (!ano || !mes || !dia) return "Data nao informada"
+  if (!ano || !mes || !dia) return "Data não informada"
 
   const data = new Date(ano, mes - 1, dia)
-  if (Number.isNaN(data.getTime())) return "Data nao informada"
+  if (Number.isNaN(data.getTime())) return "Data não informada"
 
   return data.toLocaleDateString("pt-BR")
 }
 
+/**
+ * Uma noticia: fonte, titulo, data, link, resumo e o Radar em que vai sair.
+ *
+ * A noticia com Radar ja chega incluida; quem revisa so age para retirar ou
+ * mudar o Radar. A que chegou sem Radar aparece na lista "Sem Radar
+ * definido" e so entra no e-mail se alguem escolher um Radar para ela.
+ */
 export function NewsCard({
   item,
   focado,
   ajusteAberto,
   desabilitado = false,
   onFocar,
-  onAprovar,
-  onRejeitar,
+  onRetirar,
+  onDesfazer,
   onAbrirAjuste,
-  onSalvarAjustes,
+  onSalvarRadares,
 }: NewsCardProps) {
   const { noticia, status, boletinsFinais } = item
-  const sugestao = noticia.sugestao_sem_ia
-  const sugestaoPendente = Boolean(sugestao) && status === "pendente"
   const cardRef = useRef<HTMLElement>(null)
-  const [corpoAberto, setCorpoAberto] = useState(true)
-  const [rejeicoesAbertas, setRejeicoesAbertas] = useState(false)
   const [rascunho, setRascunho] = useState<BoletimId[]>(boletinsFinais)
+
+  const incluida = status === "aprovado" || status === "ajustado"
+  const semRadar = status === "sem_radar"
+  const radaresAntes = noticia.radares_definidos
 
   useEffect(() => {
     if (ajusteAberto) {
@@ -74,33 +80,9 @@ export function NewsCard({
     }
   }, [focado])
 
-  function alternarBoletim(id: BoletimId, marcado: boolean) {
+  function alternarRadar(id: BoletimId, marcado: boolean) {
     setRascunho((atual) => (marcado ? [...atual, id] : atual.filter((b) => b !== id)))
   }
-
-  function abrirLinkFonte(e: React.MouseEvent) {
-    e.stopPropagation()
-    if (noticia.url) {
-      window.open(noticia.url, "_blank", "noopener,noreferrer")
-    }
-  }
-
-  // Botoes contextuais por status:
-  // - Aprovado / Ajustado: [Ajustar boletins] + [Remover]
-  // - Pendente:            [Incluir no boletim] (usa o painel de ajuste)
-  // - Rejeitado:           [Ajustar boletins]
-  const mostrarBotaoAjustar = status === "aprovado" || status === "ajustado" || status === "rejeitado"
-  const mostrarBotaoRemover = status === "aprovado" || status === "ajustado"
-  const mostrarBotaoIncluir = status === "pendente"
-
-  // Referencia funcao onAprovar para evitar warning de "prop nao usada"
-  // Nao chamamos porque o fluxo novo eh totalmente baseado em ajuste manual.
-  void onAprovar
-
-  const totalBotoes =
-    (mostrarBotaoAjustar ? 1 : 0) + (mostrarBotaoRemover ? 1 : 0) + (mostrarBotaoIncluir ? 1 : 0)
-  const gridClasse =
-    totalBotoes === 2 ? "grid grid-cols-1 gap-2 sm:grid-cols-2" : "grid grid-cols-1 gap-2"
 
   return (
     <article
@@ -117,7 +99,6 @@ export function NewsCard({
         status === "rejeitado" && "opacity-60"
       )}
     >
-      {/* Header do card */}
       <div className="flex items-start justify-between gap-3 p-4 pb-0">
         <div className="flex min-w-0 flex-col gap-1">
           <span className="text-xs font-semibold tracking-widest text-primary uppercase">
@@ -127,176 +108,122 @@ export function NewsCard({
             {noticia.titulo}
           </h2>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
-            {noticia.origem === "manual" && (
-              <Badge className="border border-amber-400/40 bg-amber-100 text-xs text-amber-800 hover:bg-amber-100">
-                Adicionado manualmente
-              </Badge>
-            )}
-            {sugestao ? (
-              <Badge className="border border-violet-400/50 bg-violet-100 text-xs text-violet-800 hover:bg-violet-100">
-                Sugestão sem IA
-              </Badge>
-            ) : (
-              noticia.nao_classificada_ia && (
-                <Badge className="border border-violet-400/50 bg-violet-50 text-xs text-violet-800 hover:bg-violet-50">
-                  Não classificada pela IA
-                </Badge>
-              )
-            )}
             <Badge variant="secondary" className="text-xs">
               {formatarData(noticia.data_publicacao)}
             </Badge>
-            <Badge variant="secondary" className="text-xs">
-              {noticia.categoria}
-            </Badge>
+            {noticia.origem === "manual" && (
+              <Badge className="border border-amber-400/40 bg-amber-100 text-xs text-amber-800 hover:bg-amber-100">
+                Adicionada na revisão
+              </Badge>
+            )}
             {noticia.url && (
-              <button
-                type="button"
-                onClick={abrirLinkFonte}
+              <a
+                href={noticia.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
                 className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
               >
                 <ExternalLinkIcon className="size-3" aria-hidden="true" />
-                Fonte
-              </button>
+                Abrir notícia
+              </a>
             )}
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <StatusBadge status={status} />
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={(e) => {
-              e.stopPropagation()
-              setCorpoAberto((a) => !a)
-            }}
-            aria-expanded={corpoAberto}
-            aria-label={corpoAberto ? "Recolher detalhes" : "Expandir detalhes"}
-          >
-            <ChevronDownIcon
-              className={cn("transition-transform duration-150", corpoAberto && "rotate-180")}
-            />
-          </Button>
-        </div>
+        {(status === "ajustado" || status === "rejeitado") && <StatusBadge status={status} />}
       </div>
 
-      {/* Corpo colapsavel */}
-      <Collapsible open={corpoAberto} onOpenChange={setCorpoAberto}>
-        <CollapsibleContent>
-          <div className="flex flex-col gap-3 p-4 pt-3">
-            <p className="text-sm leading-relaxed text-foreground/90">{noticia.resumo}</p>
-            <p className="text-xs text-muted-foreground italic">
-              {noticia.nao_classificada_ia ? "Motivo:" : "Motivo da IA:"} {noticia.motivo_filtragem}
-            </p>
+      <div className="flex flex-col gap-3 p-4 pt-3">
+        {noticia.resumo && (
+          <p className="text-sm leading-relaxed text-foreground/90">{noticia.resumo}</p>
+        )}
 
-            {noticia.palavras_chave_detectadas.length > 0 && (
-              <div className="flex flex-wrap gap-1" aria-label="Palavras-chave detectadas">
-                {noticia.palavras_chave_detectadas.map((palavra) => (
+        <div className="flex flex-col gap-1.5">
+          {incluida && (
+            <>
+              <span className="text-xs font-medium text-muted-foreground">Vai sair em:</span>
+              <div className="flex flex-wrap gap-1">
+                {boletinsFinais.map((id) => (
                   <Badge
-                    key={palavra}
+                    key={id}
                     variant="outline"
-                    className="border-info/30 bg-info/10 text-xs text-info"
+                    className="border-success/40 bg-success/10 text-xs text-success"
                   >
-                    {palavra}
+                    {BOLETINS[id]}
                   </Badge>
                 ))}
               </div>
-            )}
-
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium text-muted-foreground">
-                {status === "ajustado"
-                  ? "Incluido em:"
-                  : sugestaoPendente
-                    ? "Sugestão sem IA (só entra no boletim depois de confirmada):"
-                    : "IA sugeriu incluir em:"}
-              </span>
-              {boletinsFinais.length > 0 ? (
-                <div className="flex flex-wrap gap-1">
-                  {boletinsFinais.map((id) => (
-                    <Badge
-                      key={id}
-                      variant="outline"
-                      className={
-                        sugestaoPendente
-                          ? "border-dashed border-violet-400/60 bg-violet-50 text-xs text-violet-800"
-                          : "border-success/40 bg-success/10 text-xs text-success"
-                      }
-                    >
-                      {BOLETINS[id]}
-                    </Badge>
-                  ))}
-                </div>
-              ) : (
+              {status === "ajustado" && radaresAntes.length > 0 && (
                 <span className="text-xs text-muted-foreground">
-                  Nenhum boletim - item orfao
+                  Antes: {radaresAntes.map((id) => BOLETINS[id]).join(", ")}
                 </span>
               )}
-            </div>
-
-            {noticia.boletins_rejeitados.length > 0 && (
-              <Collapsible open={rejeicoesAbertas} onOpenChange={setRejeicoesAbertas}>
-                <CollapsibleTrigger
-                  render={
-                    <Button variant="ghost" size="xs" className="w-fit text-muted-foreground" />
-                  }
-                >
-                  <ChevronDownIcon
-                    data-icon="inline-start"
-                    className={cn(
-                      "transition-transform duration-150",
-                      rejeicoesAbertas && "rotate-180"
-                    )}
-                  />
-                  {noticia.boletins_rejeitados.length === 1
-                    ? "1 boletim descartado pela IA"
-                    : `${noticia.boletins_rejeitados.length} boletins descartados pela IA`}
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <ul className="mt-1 flex flex-col gap-1 rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground">
-                    {noticia.boletins_rejeitados.map((rej) => (
-                      <li key={rej.boletim}>
-                        <span className="font-medium text-foreground/80">
-                          {BOLETINS[rej.boletim]}:
-                        </span>{" "}
-                        {rej.motivo}
-                      </li>
-                    ))}
-                  </ul>
-                </CollapsibleContent>
-              </Collapsible>
-            )}
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
+            </>
+          )}
+          {status === "rejeitado" && (
+            <span className="text-xs text-muted-foreground">
+              Retirada por você: não vai para o e-mail.
+            </span>
+          )}
+          {semRadar && (
+            <span className="text-xs text-muted-foreground">
+              Só vai para o e-mail se você escolher um Radar.
+            </span>
+          )}
+        </div>
+      </div>
 
       <Separator />
 
-      {/* Acoes contextuais por status */}
       <div className="flex flex-col gap-2 p-4 pt-3">
-        <div className={gridClasse}>
-          {/* Botao Ajustar boletins - aparece em Aprovado, Ajustado e Rejeitado */}
-          {mostrarBotaoAjustar && (
+        <div className="flex flex-wrap gap-2">
+          {incluida && (
+            <>
+              <Button
+                variant="outline"
+                disabled={desabilitado}
+                className="border-info/40 text-info hover:bg-info/10 hover:text-info"
+                aria-expanded={ajusteAberto}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onAbrirAjuste(!ajusteAberto)
+                }}
+              >
+                <SlidersHorizontalIcon data-icon="inline-start" />
+                Mudar Radar
+              </Button>
+              <Button
+                variant="outline"
+                disabled={desabilitado}
+                className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onRetirar()
+                }}
+              >
+                <XIcon data-icon="inline-start" />
+                Retirar
+              </Button>
+            </>
+          )}
+
+          {status === "rejeitado" && (
             <Button
               variant="outline"
-              size="lg"
               disabled={desabilitado}
-              className="border-info/40 text-info hover:bg-info/10 hover:text-info"
-              aria-expanded={ajusteAberto}
               onClick={(e) => {
                 e.stopPropagation()
-                onAbrirAjuste(!ajusteAberto)
+                onDesfazer()
               }}
             >
-              <SlidersHorizontalIcon data-icon="inline-start" />
-              Ajustar boletins
+              <Undo2Icon data-icon="inline-start" />
+              Desfazer
             </Button>
           )}
 
-          {/* Botao Incluir no boletim - aparece em Pendente */}
-          {mostrarBotaoIncluir && (
+          {semRadar && (
             <Button
-              size="lg"
+              variant="outline"
               disabled={desabilitado}
               aria-expanded={ajusteAberto}
               onClick={(e) => {
@@ -305,31 +232,14 @@ export function NewsCard({
               }}
             >
               <PlusCircleIcon data-icon="inline-start" />
-              {sugestao ? "Confirmar ou trocar o Radar" : "Incluir no boletim"}
-            </Button>
-          )}
-
-          {/* Botao Remover - aparece em Aprovado e Ajustado */}
-          {mostrarBotaoRemover && (
-            <Button
-              variant="outline"
-              size="lg"
-              disabled={desabilitado}
-              className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              onClick={(e) => {
-                e.stopPropagation()
-                onRejeitar()
-              }}
-            >
-              <XIcon data-icon="inline-start" />
-              Remover
+              Escolher Radar
             </Button>
           )}
         </div>
 
         {ajusteAberto && (
           <fieldset className="mt-1 flex flex-col gap-3 rounded-lg border bg-muted/40 p-4">
-            <legend className="sr-only">Selecionar boletins para este item</legend>
+            <legend className="sr-only">Radares em que a notícia vai sair</legend>
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
               {BOLETIM_IDS.map((id) => {
                 const checkboxId = `${noticia.id}-${id}`
@@ -338,7 +248,7 @@ export function NewsCard({
                     <Checkbox
                       id={checkboxId}
                       checked={rascunho.includes(id)}
-                      onCheckedChange={(marcado) => alternarBoletim(id, marcado === true)}
+                      onCheckedChange={(marcado) => alternarRadar(id, marcado === true)}
                     />
                     <label htmlFor={checkboxId} className="cursor-pointer text-sm leading-none">
                       {BOLETINS[id]}
@@ -351,8 +261,8 @@ export function NewsCard({
               <Button variant="outline" size="sm" onClick={() => onAbrirAjuste(false)}>
                 Cancelar
               </Button>
-              <Button size="sm" onClick={() => onSalvarAjustes(rascunho)}>
-                Salvar ajustes
+              <Button size="sm" onClick={() => onSalvarRadares(rascunho)}>
+                Salvar
               </Button>
             </div>
           </fieldset>
